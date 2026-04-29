@@ -128,9 +128,9 @@ const PermissionsSettings: React.FC<PermissionsSettingsProps> = ({ tenantId }) =
 
   function enableAll(role: UserRole) {
     if (role === UserRole.ADMIN) return;
-    const allOn: RoleModulePermissions = Object.fromEntries(
+    const allOn = Object.fromEntries(
       MODULES.map(m => [m.id, true])
-    ) as RoleModulePermissions;
+    ) as unknown as RoleModulePermissions;
     persist({ ...perms, [role]: { modules: allOn, canViewFinancialValues: true } });
   }
 

@@ -3,6 +3,7 @@ import React, { useState, useRef } from 'react';
 import Modal from './Modal';
 import { TransactionStatus, UserRole, Transaction } from '../types';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from 'recharts';
+import { getCurrentTenantId } from '../services/tenantService';
 
 interface FinanceProps {
   transactions: Transaction[];
@@ -40,7 +41,7 @@ const formatCurrency = (value: number) => {
 
 const Finance: React.FC<FinanceProps> = ({ transactions, setTransactions, users, cases, onApprove, onReject, hideAmounts = false }) => {
   // Mascara valores monetários quando o perfil não tem permissão
-  const fmtVal = (v: number) => hideAmounts ? '••••' : fmt(v);
+  const fmtVal = (v: number) => hideAmounts ? '••••' : formatCurrency(v);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
   const [editingTx, setEditingTx] = useState<any>(null);
@@ -193,7 +194,8 @@ const Finance: React.FC<FinanceProps> = ({ transactions, setTransactions, users,
       status: isFuture ? TransactionStatus.FUTURE : TransactionStatus.APPROVED,
       hasAttachment: !!attachment || !!editingTx?.hasAttachment,
       attachmentData: attachment?.data || editingTx?.attachmentData,
-      attachmentName: attachment?.name || editingTx?.attachmentName
+      attachmentName: attachment?.name || editingTx?.attachmentName,
+      tenantId: editingTx?.tenantId || getCurrentTenantId(),
     };
 
     if (editingTx) setTransactions(transactions.map(t => t.id === editingTx.id ? newTx : t));

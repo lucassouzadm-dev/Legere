@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Priority, Comment, Task, User, Case, UserRole } from '../types';
 import Modal from './Modal';
 import { sendNotificationEmail } from '../services/notificationService';
+import { getCurrentTenantId } from '../services/tenantService';
 
 const columns = [
   { id: 'TODO', title: 'A Fazer', color: 'bg-gray-400' },
@@ -264,7 +265,8 @@ const Tasks: React.FC<TasksProps> = ({ users, clients, cases, tasks, setTasks, c
       status: 'TODO',
       responsible: formData.get('responsible') as string,
       createdBy: currentUser.id,
-      comments: []
+      comments: [],
+      tenantId: getCurrentTenantId(),
     };
     setTasks(prev => [newTask, ...prev]);
 

@@ -2,6 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { Hearing, HearingModality, HearingStatus, User, Case } from '../types';
 import Modal from './Modal';
+import { getCurrentTenantId } from '../services/tenantService';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -214,6 +215,7 @@ const Hearings: React.FC<HearingsProps> = ({
         notified1d: false,
         notified3h: false,
         createdAt: now,
+        tenantId: getCurrentTenantId(),
       };
       setHearings(prev => [...prev, newHearing]);
 

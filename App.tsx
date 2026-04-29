@@ -639,7 +639,7 @@ const App: React.FC = () => {
           clientCases={cases.filter((c: any) => c.clientId === currentUser.id)}
           onLogout={handleLogout}
           onUpdateClient={(upd: any) => handleSetClients((prev: any[]) => prev.map(c => c.id === upd.id ? upd : c))}
-          onReportPayment={(amt: number, dat: string, nam: string) => {
+          onReportPayment={(amt: number, dat?: string, nam?: string) => {
             const tenantId = getCurrentTenantId();
             const tx = { id: `tx-${Date.now()}`, description: 'Pgto Portal', amount: amt, type: 'IN', category: 'Honorários', date: getTodayStr(), status: TransactionStatus.PENDING, hasAttachment: !!dat, attachmentData: dat, attachmentName: nam, clientId: currentUser.id, clientName: currentUser.name, tenantId };
             handleSetTransactions((prev: any[]) => [...prev, tx]);

@@ -147,10 +147,18 @@ TRECHO JURÍDICO:
 
 // ─── Busca de publicações via Gemini (fallback) ───────────────────────────────
 
+export interface GeminiPublicationsResult {
+  publications: any[];
+  message: string;
+}
+
 export async function searchJudicialPublications(
-  oab: string, uf: string, startDate: string, endDate: string
-): Promise<any[]> {
-  const prompt = `Busque publicações judiciais reais do diário eletrônico (DJEN) para o advogado com OAB ${oab}/${uf} entre ${startDate} e ${endDate}. Retorne um array JSON com campos: processNumber, content, tribunal, publicationDate. Se não houver dados reais disponíveis, retorne [].`;
+  params: { caseCnjs: string[] }
+): Promise<GeminiPublicationsResult> {
+  const { caseCnjs } = params;
+  const today = new Date().toISOString().split('T')[0];
+  const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
+  const prompt = `Busque publicações judiciais no DJEN para os processos: ${caseCnjs.slice(0,10).join(', ')} entre ${weekAgo} e ${today}. Retorne um JSON com campo "publications": array com campos cnj, content, tribunal, publicationDate. Se não houver dados reais disponíveis, retorne {"publications":[]}.`;
   try {
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_KEY}`,
@@ -158,8 +166,14 @@ export async function searchJudicialPublications(
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) }
     );
     const data = await res.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '[]';
-    const match = text.match(/\[[\s\S]*\]/);
-    return match ? JSON.parse(match[0]) : [];
-  } catch { return []; }
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '{}';
+    const match = text.match(/\{[\s\S]*\}/);
+    const parsed = match ? JSON.parse(match[0]) : {};
+    return {
+      publications: parsed.publications ?? [],
+      message: parsed.message ?? 'Nenhuma publicação nova encontrada nos últimos 7 dias.',
+    };
+  } catch {
+    return { publications: [], message: 'Erro ao consultar Gemini.' };
+  }
 }

@@ -2,6 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import Modal from './Modal';
 import { ClientStatus, Client, ServiceLog, UserRole, ClientNotice, ClientDocument } from '../types';
+import { getCurrentTenantId } from '../services/tenantService';
 
 interface CRMProps {
   clients: Client[];
@@ -119,7 +120,8 @@ const CRM: React.FC<CRMProps> = ({ clients, setClients, currentUser }) => {
       serviceLogs: editingClient?.serviceLogs || [],
       notices: editingClient?.notices || [],
       tags: editingClient?.tags || [],
-      score: editingClient?.score || 0
+      score: editingClient?.score || 0,
+      tenantId: editingClient?.tenantId || getCurrentTenantId(),
     };
 
     if (editingClient) {
