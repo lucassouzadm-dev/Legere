@@ -4,6 +4,7 @@ import { UserRole, UserStatus, PlanType, PLAN_FEATURES, PLAN_PRICES, PLAN_LABELS
 import { BRAZIL_STATES } from '../constants';
 import IntegrationSettings from './IntegrationSettings';
 import PermissionsSettings from './PermissionsSettings';
+import { authService } from '../services/authService';
 
 interface SettingsProps {
   users: any[];
@@ -45,7 +46,7 @@ const Settings: React.FC<SettingsProps> = ({ users, setUsers, clients, currentUs
     onTenantUpdate(updated);
     // Persistência local até migração para Supabase
     try {
-      const key = `juriscloud_tenant_${tenant.id}`;
+      const key = `legere_tenant_${tenant.id}`;
       const saved = JSON.parse(localStorage.getItem(key) ?? '{}');
       localStorage.setItem(key, JSON.stringify({ ...saved, slogan: slogan.trim() || undefined }));
     } catch {}
@@ -66,11 +67,23 @@ const Settings: React.FC<SettingsProps> = ({ users, setUsers, clients, currentUs
     setGeneratedPass(pass);
   };
 
-  const handleChangePassword = (e: React.FormEvent) => {
+  const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (passwords.current !== currentUser.password) return alert('Senha atual incorreta.');
     if (passwords.next.length < 6) return alert('A nova senha deve ter pelo menos 6 caracteres.');
     if (passwords.next !== passwords.confirm) return alert('Confirmação não confere.');
+
+    // Modo Supabase Auth: senha gerenciada com segurança via JWT
+    const result = await authService.updatePassword(passwords.next);
+    if (!result.fallback) {
+      if (!result.success) return alert(result.error || 'Erro ao atualizar senha.');
+      setPasswordSuccess(true);
+      setPasswords({ current: '', next: '', confirm: '' });
+      setTimeout(() => setPasswordSuccess(false), 3000);
+      return;
+    }
+
+    // Fallback localStorage: valida a senha atual manualmente
+    if (passwords.current !== currentUser.password) return alert('Senha atual incorreta.');
     setUsers((prev: any[]) => prev.map(u => u.id === currentUser.id ? { ...u, password: passwords.next } : u));
     setPasswordSuccess(true);
     setPasswords({ current: '', next: '', confirm: '' });

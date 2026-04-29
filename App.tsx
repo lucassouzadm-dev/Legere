@@ -471,11 +471,23 @@ const App: React.FC = () => {
     const geral = { id: `ch-${newTenant.id}-geral`, name: 'Geral', members: [adminUser.id], type: 'CHANNEL', tenantId: newTenant.id };
     await channelsDb.upsert(geral);
 
-    setUsersState([adminUser]);
-    setChannels([geral]);
     setCurrentUser(adminUser);
     setAuthState('STAFF');
+
+    // Carrega dados do tenant recém-criado
     await loadAllData();
+
+    // Após loadAllData, garante que o admin e o canal "Geral" estão no estado
+    // (loadAllData pode retornar vazio se o JWT do Supabase ainda não estiver ativo)
+    setUsersState(prev => {
+      const jaExiste = prev.some(u =>
+        u.email?.toLowerCase() === adminEmail.toLowerCase() || u.id === adminUser.id
+      );
+      return jaExiste ? prev : [adminUser, ...prev];
+    });
+    setChannels(prev =>
+      prev.some(c => c.id === geral.id) ? prev : [geral, ...prev]
+    );
   }, [loadAllData]);
 
   // ── Login ─────────────────────────────────────────────────────────────────
