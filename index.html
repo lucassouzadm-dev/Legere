@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Legere — Gestão jurídica inteligente</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              'navy': { 50:'#EEF2FF', 100:'#E0E7FF', 300:'#93a8d4', 700:'#1e3a8a', 800:'#1e3a8a', 900:'#1e2e6b' },
+              'gold': { 50:'#FFFBEB', 800:'#B45309' }
+            },
+            fontFamily: { serif: ['Georgia', 'serif'] }
+          }
+        }
+      }
+    </script>
+    <style>
+      .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+      .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+      .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+      @keyframes animate-in { from { opacity:0; transform: scale(0.97); } to { opacity:1; transform: scale(1); } }
+      .animate-in { animation: animate-in 0.2s ease-out; }
+      .fade-in { animation: animate-in 0.3s ease-out; }
+      .zoom-in-95 { animation: animate-in 0.2s ease-out; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>

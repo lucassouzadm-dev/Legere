@@ -1,0 +1,7 @@
+Chaves do Supabase para o Legere
+
+ANON
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxsZHZka3p0cG1wdm56ZWNzemxoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc1MDQ2NDgsImV4cCI6MjA5MzA4MDY0OH0.J0x7cnQFvahnGS43nUNRFTuFsDHVnrZmNQ2gRxJiScc
+
+Project URL
+https://lldvdkztpmpvnzecszlh.supabase.co
