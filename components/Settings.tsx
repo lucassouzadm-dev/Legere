@@ -125,7 +125,7 @@ const Settings: React.FC<SettingsProps> = ({ users, setUsers, clients, currentUs
     setTimeout(() => setPasswordSuccess(false), 3000);
   };
 
-  const handleSubmitUser = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmitUser = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const ud = {
@@ -140,8 +140,11 @@ const Settings: React.FC<SettingsProps> = ({ users, setUsers, clients, currentUs
       password: (fd.get('password') as string) || editingUser?.password || '123456',
       tenantId: currentUser.tenantId,
     };
-    if (editingUser?.id) setUsers((prev: any[]) => prev.map(u => u.id === editingUser.id ? ud : u));
-    else setUsers((prev: any[]) => [...prev, { ...ud, id: `u-${Date.now()}` }]);
+    const finalUser = editingUser?.id ? ud : { ...ud, id: `u-${Date.now()}` };
+    if (editingUser?.id) setUsers((prev: any[]) => prev.map(u => u.id === editingUser.id ? finalUser : u));
+    else setUsers((prev: any[]) => [...prev, finalUser]);
+    // Persiste no Supabase
+    await usersDb.upsert(finalUser);
     setIsModalOpen(false);
     setEditingUser(null);
   };

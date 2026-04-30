@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import {
   ContatoCRM, LeadCRM, MensagemCRM, EtapaConversa, StatusConversa, EtapaPipeline,
-  Canal, gerarContatosDemo, gerarLeadsDemo, gerarMensagensDemo,
+  Canal,
   ConfiguracaoCRM, getConfiguracaoPadrao, processarMensagem,
 } from '../services/whatsappCrm';
 import { getCurrentTenantId, loadIntegrations } from '../services/tenantService';
@@ -554,15 +554,9 @@ const WhatsAppCRM: React.FC = () => {
     const integrations = loadIntegrations(tenantId);
     return integrations.geminiApiKey || undefined;
   });
-  const [contatos, setContatos] = useState<ContatoCRM[]>(() => gerarContatosDemo(tenantId));
-  const [leads, setLeads] = useState<LeadCRM[]>(() => gerarLeadsDemo(tenantId));
-  const [mensagens, setMensagens] = useState<Record<string, MensagemCRM[]>>(() => {
-    const m: Record<string, MensagemCRM[]> = {};
-    gerarContatosDemo(tenantId).forEach(c => {
-      m[c.id] = gerarMensagensDemo(c.id, tenantId);
-    });
-    return m;
-  });
+  const [contatos, setContatos] = useState<ContatoCRM[]>([]);
+  const [leads, setLeads] = useState<LeadCRM[]>([]);
+  const [mensagens, setMensagens] = useState<Record<string, MensagemCRM[]>>({});
   const [aba, setAba] = useState<Aba>('inbox');
 
   const kbScore = calcularScore(knowledge);
