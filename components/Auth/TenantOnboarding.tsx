@@ -11,6 +11,7 @@ interface TenantOnboardingProps {
     email: string;
     plan: PlanType;
     adminName: string;
+    adminEmail: string;
     adminPassword: string;
     oabNumber?: string;
     oabState?: string;
