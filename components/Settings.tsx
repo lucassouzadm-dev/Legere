@@ -5,6 +5,7 @@ import { BRAZIL_STATES } from '../constants';
 import IntegrationSettings from './IntegrationSettings';
 import PermissionsSettings from './PermissionsSettings';
 import { authService } from '../services/authService';
+import { usersDb } from '../services/db';
 
 interface SettingsProps {
   users: any[];
@@ -39,6 +40,12 @@ const Settings: React.FC<SettingsProps> = ({ users, setUsers, clients, currentUs
   const [slogan, setSlogan] = useState(tenant?.slogan ?? '');
   const [sloganSaved, setSloganSaved] = useState(false);
 
+  // Dados profissionais do usuário logado
+  const [profileName,      setProfileName]      = useState(currentUser.name ?? '');
+  const [profileOabNumber, setProfileOabNumber] = useState(currentUser.oabNumber ?? '');
+  const [profileOabState,  setProfileOabState]  = useState(currentUser.oabState ?? '');
+  const [profileSaved,     setProfileSaved]     = useState(false);
+
   function handleSloganSave(e: React.FormEvent) {
     e.preventDefault();
     if (!tenant || !onTenantUpdate) return;
@@ -53,6 +60,20 @@ const Settings: React.FC<SettingsProps> = ({ users, setUsers, clients, currentUs
     setSloganSaved(true);
     setTimeout(() => setSloganSaved(false), 2500);
   }
+
+  const handleProfileSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const updated = {
+      ...currentUser,
+      name:      profileName.trim() || currentUser.name,
+      oabNumber: profileOabNumber.trim() || null,
+      oabState:  profileOabState.trim().toUpperCase().slice(0, 2) || null,
+    };
+    setUsers((prev: any[]) => prev.map(u => u.id === currentUser.id ? updated : u));
+    await usersDb.upsert(updated);
+    setProfileSaved(true);
+    setTimeout(() => setProfileSaved(false), 2500);
+  };
 
   const isAdmin = currentUser.role === UserRole.ADMIN;
   const currentPlan: PlanType = (tenant?.plan ?? PlanType.ESSENCIAL) as PlanType;
@@ -196,6 +217,40 @@ const Settings: React.FC<SettingsProps> = ({ users, setUsers, clients, currentUs
                   </button>
                 </form>
               )}
+
+              {/* ── Dados Profissionais ── */}
+              <form onSubmit={handleProfileSave} className="max-w-md space-y-4 pb-6 border-b dark:border-slate-700">
+                <h4 className="text-[10px] font-bold text-navy-800 dark:text-gold-800 uppercase tracking-[0.2em]">Dados Profissionais</h4>
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Nome Completo</label>
+                  <input value={profileName} onChange={e => setProfileName(e.target.value)} required
+                    className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white focus:ring-2 focus:ring-gold-800 outline-none" />
+                </div>
+                {(currentUser.role === UserRole.LAWYER || currentUser.role === UserRole.INTERN || currentUser.role === UserRole.ADMIN) && (
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">
+                      OAB — necessário para consulta de publicações DJEN
+                    </label>
+                    <div className="flex gap-3">
+                      <input value={profileOabNumber} onChange={e => setProfileOabNumber(e.target.value)}
+                        placeholder="Nº OAB (ex: 123456)"
+                        className="flex-1 bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white focus:ring-2 focus:ring-gold-800 outline-none font-mono" />
+                      <select value={profileOabState} onChange={e => setProfileOabState(e.target.value)}
+                        className="w-24 bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white focus:ring-2 focus:ring-gold-800 outline-none">
+                        <option value="">UF</option>
+                        {BRAZIL_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                    <p className="text-[10px] text-gray-400 mt-1">
+                      Preencha para habilitar a busca automática de publicações judiciais no DJEN.
+                    </p>
+                  </div>
+                )}
+                <button type="submit"
+                  className="w-full bg-navy-800 text-white py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-gold-800 transition-all">
+                  {profileSaved ? '✓ Dados salvos!' : 'Salvar Dados Profissionais'}
+                </button>
+              </form>
 
               <form onSubmit={handleChangePassword} className="max-w-md space-y-4">
                 <h4 className="text-[10px] font-bold text-navy-800 dark:text-gold-800 uppercase tracking-[0.2em]">Segurança e Senha</h4>
