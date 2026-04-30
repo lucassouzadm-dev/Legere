@@ -32,7 +32,7 @@ function userToDb(u: any) {
   return {
     id: u.id, name: u.name, email: u.email, role: u.role,
     status: u.status, monthly_goal: u.monthlyGoal ?? 0,
-    avatar: u.avatar ?? null, password: u.password ?? null,
+    avatar: u.avatar ?? null,
     oab_number: u.oabNumber ?? null, oab_state: u.oabState ?? null,
     tenant_id: u.tenantId ?? tid(),
   };
@@ -41,7 +41,7 @@ function dbToUser(r: any) {
   return {
     id: r.id, name: r.name, email: r.email, role: r.role,
     status: r.status, monthlyGoal: r.monthly_goal,
-    avatar: r.avatar, password: r.password,
+    avatar: r.avatar,
     oabNumber: r.oab_number ?? null, oabState: r.oab_state ?? null,
     tenantId: r.tenant_id,
   };
