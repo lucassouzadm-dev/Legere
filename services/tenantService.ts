@@ -73,9 +73,62 @@ export function loadIntegrations(tenantId: string): TenantIntegrations {
 
 /** Gera um verify token determinístico para o webhook Meta (baseado no tenant) */
 export function generateVerifyToken(tenantId: string): string {
-  // Em produção usar crypto.randomUUID() salvo no DB.
-  // Para demo, derivamos do tenant id de forma consistente.
   return 'jc_' + tenantId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 24);
+}
+
+// ─── Controle de uso de IA por tenant ────────────────────────────────────────
+
+function currentMonthKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/**
+ * Retorna quantas requisições de IA o tenant já usou no mês corrente.
+ */
+export function getAiUsage(tenantId: string): { count: number; monthKey: string } {
+  const integrations = loadIntegrations(tenantId);
+  const monthKey = currentMonthKey();
+  const resetAt  = integrations.aiRequestsResetAt ?? '';
+  // Reseta se mudou o mês
+  if (resetAt !== monthKey) return { count: 0, monthKey };
+  return { count: integrations.aiRequestsCount ?? 0, monthKey };
+}
+
+/**
+ * Verifica se o tenant pode fazer mais uma requisição de IA.
+ * monthlyLimit = -1 significa ilimitado.
+ */
+export function checkAiLimit(tenantId: string, monthlyLimit: number): {
+  allowed: boolean;
+  used: number;
+  limit: number;
+  remaining: number;
+} {
+  if (monthlyLimit === -1) return { allowed: true, used: 0, limit: -1, remaining: -1 };
+  const { count } = getAiUsage(tenantId);
+  return {
+    allowed:   count < monthlyLimit,
+    used:      count,
+    limit:     monthlyLimit,
+    remaining: Math.max(0, monthlyLimit - count),
+  };
+}
+
+/**
+ * Incrementa o contador de uso de IA do tenant em 1.
+ * Chame APÓS uma requisição bem-sucedida ao Gemini.
+ */
+export function incrementAiUsage(tenantId: string): void {
+  const monthKey     = currentMonthKey();
+  const integrations = loadIntegrations(tenantId);
+  const prevMonth    = integrations.aiRequestsResetAt ?? '';
+  const prevCount    = prevMonth === monthKey ? (integrations.aiRequestsCount ?? 0) : 0;
+  saveIntegrations(tenantId, {
+    ...integrations,
+    aiRequestsCount:  prevCount + 1,
+    aiRequestsResetAt: monthKey,
+  });
 }
 
 // ─── Supabase CRUD de Tenants ─────────────────────────────────────────────────

@@ -69,12 +69,15 @@ export enum PlanType {
 }
 
 export interface PlanFeatures {
-  maxUsers: number;           // -1 = ilimitado
-  maxClients: number;         // -1 = ilimitado
+  maxUsers: number;              // -1 = ilimitado
+  maxClients: number;            // -1 = ilimitado
   djenAutoSync: boolean;
   aiPetitionGenerator: boolean;
+  geminiIncluded: boolean;       // true = chave Gemini da plataforma (sem custo pro cliente)
+  aiMonthlyLimit: number;        // requisições IA/mês (-1 = ilimitado)
   clientPortal: boolean;
   whatsappIntegration: boolean;
+  evolutionApiIncluded: boolean; // true = Evolution API já hospedada pela plataforma
   advancedReports: boolean;
   apiAccess: boolean;
   multiUnit: boolean;
@@ -87,20 +90,26 @@ export const PLAN_FEATURES: Record<PlanType, PlanFeatures> = {
     maxClients: 100,
     djenAutoSync: false,
     aiPetitionGenerator: false,
+    geminiIncluded: false,
+    aiMonthlyLimit: 0,
     clientPortal: false,
     whatsappIntegration: false,
+    evolutionApiIncluded: false,
     advancedReports: false,
     apiAccess: false,
     multiUnit: false,
     prioritySupport: false,
   },
   [PlanType.PROFISSIONAL]: {
-    maxUsers: 10,
+    maxUsers: 15,
     maxClients: -1,
     djenAutoSync: true,
     aiPetitionGenerator: true,
+    geminiIncluded: true,        // Gemini da plataforma incluso
+    aiMonthlyLimit: 100,         // 100 requisições IA/mês
     clientPortal: true,
-    whatsappIntegration: false,
+    whatsappIntegration: true,   // WhatsApp via Evolution API da plataforma
+    evolutionApiIncluded: true,  // cliente só escaneia o QR Code
     advancedReports: true,
     apiAccess: false,
     multiUnit: false,
@@ -111,8 +120,11 @@ export const PLAN_FEATURES: Record<PlanType, PlanFeatures> = {
     maxClients: -1,
     djenAutoSync: true,
     aiPetitionGenerator: true,
+    geminiIncluded: true,        // Gemini da plataforma incluso
+    aiMonthlyLimit: 400,         // 400 requisições IA/mês
     clientPortal: true,
     whatsappIntegration: true,
+    evolutionApiIncluded: true,  // Evolution incluso + opção Meta API oficial
     advancedReports: true,
     apiAccess: true,
     multiUnit: true,
@@ -121,14 +133,14 @@ export const PLAN_FEATURES: Record<PlanType, PlanFeatures> = {
 };
 
 export const PLAN_PRICES: Record<PlanType, number> = {
-  [PlanType.ESSENCIAL]:    79,
-  [PlanType.PROFISSIONAL]: 129,
-  [PlanType.ENTERPRISE]:   199,
+  [PlanType.ESSENCIAL]:    89,
+  [PlanType.PROFISSIONAL]: 179,
+  [PlanType.ENTERPRISE]:   299,
 };
 
 export const PLAN_LABELS: Record<PlanType, string> = {
   [PlanType.ESSENCIAL]:    'Essencial',
-  [PlanType.PROFISSIONAL]: 'Profissional',
+  [PlanType.PROFISSIONAL]: 'Pro',
   [PlanType.ENTERPRISE]:   'Enterprise',
 };
 
@@ -162,7 +174,9 @@ export type TenantRolePermissions = Record<UserRole, RolePermissions>;
 
 export interface TenantIntegrations {
   // ── Google Gemini ──────────────────────────────────────────────────────────
-  geminiApiKey?: string;
+  geminiApiKey?: string;         // chave própria (opcional — planos Pro/Enterprise usam a da plataforma)
+  aiRequestsCount?: number;      // requisições usadas no mês corrente
+  aiRequestsResetAt?: string;    // ISO date do início do mês de contagem
 
   // ── WhatsApp ───────────────────────────────────────────────────────────────
   whatsappMethod?: 'qrcode' | 'meta_api';

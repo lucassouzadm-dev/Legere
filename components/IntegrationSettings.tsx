@@ -18,7 +18,9 @@ import {
   saveIntegrations,
   generateVerifyToken,
   getCurrentTenantId,
+  getAiUsage,
 } from '../services/tenantService';
+import { PLATFORM_EVOLUTION_URL, PLATFORM_EVOLUTION_KEY } from '../services/gemini';
 
 // ─── HelpBox ─────────────────────────────────────────────────────────────────
 
@@ -128,91 +130,104 @@ const inputStyle: React.CSSProperties = {
   borderRadius: 8, boxSizing: 'border-box', fontFamily: 'inherit', color: '#111827',
 };
 
+// ─── Painel de Créditos de IA ─────────────────────────────────────────────────
+
+const AiCreditsPanel: React.FC<{ tenantId: string; monthlyLimit: number }> = ({ tenantId, monthlyLimit }) => {
+  if (monthlyLimit <= 0) return null;
+  const { count }   = getAiUsage(tenantId);
+  const pct         = Math.min(100, Math.round((count / monthlyLimit) * 100));
+  const remaining   = Math.max(0, monthlyLimit - count);
+  const barColor    = pct >= 100 ? '#dc2626' : pct >= 90 ? '#ea580c' : pct >= 75 ? '#d97706' : '#16a34a';
+  const bgAlert     = pct >= 100 ? '#fee2e2' : pct >= 90 ? '#fff7ed' : pct >= 75 ? '#fef3c7' : '#f0fdf4';
+  const borderAlert = pct >= 100 ? '#fca5a5' : pct >= 90 ? '#fed7aa' : pct >= 75 ? '#fde68a' : '#bbf7d0';
+  const textAlert   = pct >= 100 ? '#991b1b' : pct >= 90 ? '#9a3412' : pct >= 75 ? '#78350f' : '#166534';
+  const alertMsg    = pct >= 100
+    ? 'Limite atingido. IA pausada até o início do próximo mês.'
+    : pct >= 90 ? `Atenção: apenas ${remaining} crédito${remaining !== 1 ? 's' : ''} restante${remaining !== 1 ? 's' : ''}!`
+    : pct >= 75 ? `75% dos créditos usados. Restam ${remaining}.`
+    : `${remaining} crédito${remaining !== 1 ? 's' : ''} disponível${remaining !== 1 ? 'eis' : ''} este mês.`;
+
+  return (
+    <div style={{ background: bgAlert, border: `1px solid ${borderAlert}`, borderRadius: 12, padding: '14px 18px', marginBottom: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <span style={{ fontWeight: 700, fontSize: 13, color: textAlert }}>
+          {pct >= 100 ? '🚫' : pct >= 90 ? '🔴' : pct >= 75 ? '⚠️' : '✅'} Créditos de IA — {new Date().toLocaleString('pt-BR', { month: 'long', year: 'numeric' })}
+        </span>
+        <span style={{ fontWeight: 800, fontSize: 15, color: barColor }}>{pct}%</span>
+      </div>
+      <div style={{ background: '#e5e7eb', borderRadius: 999, height: 8, overflow: 'hidden', marginBottom: 8 }}>
+        <div style={{ width: `${pct}%`, height: '100%', background: barColor, borderRadius: 999, transition: 'width 0.4s' }} />
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: textAlert }}>
+        <span>{alertMsg}</span>
+        <span style={{ fontWeight: 600 }}>{count} / {monthlyLimit}</span>
+      </div>
+    </div>
+  );
+};
+
 // ─── Seção: Google Gemini ─────────────────────────────────────────────────────
 
 interface GeminiSectionProps {
   integrations: TenantIntegrations;
   onChange: (partial: Partial<TenantIntegrations>) => void;
   hasAiFeature: boolean;
+  geminiIncluded: boolean;
+  aiMonthlyLimit: number;
+  tenantId: string;
 }
 
-const GeminiSection: React.FC<GeminiSectionProps> = ({ integrations, onChange, hasAiFeature }) => {
-  const [key, setKey] = useState(integrations.geminiApiKey ?? '');
-  const [status, setStatus] = useState<StatusType>(integrations.geminiApiKey ? 'ok' : 'idle');
+const GeminiSection: React.FC<GeminiSectionProps> = ({
+  integrations, onChange, hasAiFeature, geminiIncluded, aiMonthlyLimit, tenantId,
+}) => {
+  const [key, setKey]           = useState(integrations.geminiApiKey ?? '');
+  const [showKeyInput, setShowKeyInput] = useState(!!integrations.geminiApiKey);
+  const [status, setStatus]     = useState<StatusType>(
+    integrations.geminiApiKey ? 'ok' : geminiIncluded ? 'ok' : 'idle'
+  );
   const [errorMsg, setErrorMsg] = useState('');
 
   async function testar() {
     if (!key.trim()) { setStatus('error'); setErrorMsg('Cole a chave antes de testar.'); return; }
-    setStatus('testing');
-    setErrorMsg('');
+    setStatus('testing'); setErrorMsg('');
     try {
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${key.trim()}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Responda apenas: OK' }] }] }),
-        }
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key.trim()}`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Responda apenas: OK' }] }] }) }
       );
-      if (res.ok) {
-        setStatus('ok');
-        onChange({ geminiApiKey: key.trim() });
-      } else {
+      if (res.ok) { setStatus('ok'); onChange({ geminiApiKey: key.trim() }); }
+      else {
         const j = await res.json().catch(() => ({}));
-        setStatus('error');
-        setErrorMsg(j?.error?.message ?? `Erro HTTP ${res.status}. Verifique a chave.`);
+        setStatus('error'); setErrorMsg(j?.error?.message ?? `Erro HTTP ${res.status}.`);
       }
-    } catch (e: any) {
-      setStatus('error');
-      setErrorMsg('Sem conexão com a API do Google. Verifique sua rede.');
-    }
-  }
-
-  function salvarSemTestar() {
-    if (!key.trim()) return;
-    onChange({ geminiApiKey: key.trim() });
-    setStatus('ok');
+    } catch { setStatus('error'); setErrorMsg('Sem conexão com a API do Google.'); }
   }
 
   const statusLabel: Record<StatusType, string> = {
-    idle:    'Não configurado',
-    testing: 'Testando…',
-    ok:      'Conectado',
-    error:   'Erro',
+    idle: 'Não configurado', testing: 'Testando…', ok: 'Ativo', error: 'Erro',
   };
 
   return (
     <div style={{ background: 'white', borderRadius: 16, border: '1px solid #e5e7eb', padding: 24, marginBottom: 20 }}>
-      {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ width: 44, height: 44, borderRadius: 12, background: 'linear-gradient(135deg, #4285f4, #34a853)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
           </div>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <span style={{ fontWeight: 800, fontSize: 16, color: '#111827' }}>Google Gemini AI</span>
-              <HelpBox label="O que é o Google Gemini e como obter a chave?">
-                <p style={{ margin: '0 0 8px 0' }}>
-                  <strong>O Google Gemini</strong> é a inteligência artificial do Google. Ele permite que o Legere escreva petições, analise publicações judiciais e responda clientes pelo WhatsApp de forma inteligente.
-                </p>
-                <p style={{ margin: '0 0 10px 0' }}>
-                  Para usar, você precisa de uma <strong>"chave de API"</strong> — funciona como uma senha que autoriza o Legere a usar a IA do Google na sua conta.
-                </p>
-                <ol style={{ margin: '0 0 10px 0', paddingLeft: 20 }}>
-                  <li style={{ marginBottom: 6 }}>Acesse <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ color: '#3b82f6', fontWeight: 600 }}>aistudio.google.com/app/apikey</a> (faça login com sua conta Google)</li>
-                  <li style={{ marginBottom: 6 }}>Clique no botão azul <strong>"Create API key"</strong></li>
-                  <li style={{ marginBottom: 6 }}>Selecione <strong>"Create API key in new project"</strong></li>
-                  <li style={{ marginBottom: 6 }}>Copie a chave gerada (começa com <code style={{ background: '#f1f5f9', padding: '1px 5px', borderRadius: 4 }}>AIza...</code>)</li>
-                  <li>Cole a chave no campo abaixo e clique em <strong>"Testar Conexão"</strong></li>
-                </ol>
-                <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#166534' }}>
-                  ✅ <strong>Gratuito para uso básico</strong> — não precisa de cartão de crédito para começar.
-                </div>
-              </HelpBox>
+              {geminiIncluded && (
+                <span style={{ fontSize: 11, fontWeight: 700, background: '#dbeafe', color: '#1d4ed8', padding: '2px 10px', borderRadius: 999 }}>
+                  INCLUSO NO PLANO
+                </span>
+              )}
             </div>
             <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
-              {hasAiFeature ? 'Geração de petições, análise de publicações e DJEN' : '⚠️ Requer plano Profissional ou superior'}
+              {!hasAiFeature ? '⚠️ Requer plano Pro ou superior'
+                : geminiIncluded ? `IA da plataforma ativa · ${aiMonthlyLimit} créditos/mês inclusos`
+                : 'Geração de petições, análise de publicações e assistente WhatsApp'}
             </div>
           </div>
         </div>
@@ -221,73 +236,47 @@ const GeminiSection: React.FC<GeminiSectionProps> = ({ integrations, onChange, h
 
       {!hasAiFeature ? (
         <div style={{ padding: '14px 18px', background: '#fef3c7', borderRadius: 10, fontSize: 13, color: '#92400e' }}>
-          Faça upgrade para o plano <strong>Profissional</strong> para habilitar as funcionalidades de IA. Veja a aba <strong>Meu Plano</strong>.
+          Faça upgrade para o plano <strong>Pro</strong> para habilitar as funcionalidades de IA. Veja a aba <strong>Meu Plano</strong>.
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-          <Step n={1} title="Obtenha sua chave de API gratuita">
-            <p style={{ margin: 0, fontSize: 13, color: '#4b5563', lineHeight: 1.6 }}>
-              Acesse{' '}
-              <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer"
-                style={{ color: '#3b82f6', fontWeight: 600, textDecoration: 'none' }}>
-                aistudio.google.com/app/apikey
-              </a>
-              {' '}→ clique em <strong>Create API key</strong> → copie a chave gerada.
-            </p>
-            <div style={{ marginTop: 8, padding: '8px 12px', background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0', fontSize: 12, color: '#166534' }}>
-              ✓ A chave é gratuita e não exige cartão de crédito para o uso básico.
-            </div>
-          </Step>
+        <>
+          <AiCreditsPanel tenantId={tenantId} monthlyLimit={aiMonthlyLimit} />
 
-          <Step n={2} title="Cole a chave abaixo">
-            <Field label="API Key do Google Gemini" hint="Começa com 'AIza...' — nunca compartilhe esta chave publicamente.">
-              <input
-                type="password"
-                value={key}
-                onChange={e => setKey(e.target.value)}
-                placeholder="AIzaSy..."
-                style={inputStyle}
-                autoComplete="off"
-              />
-            </Field>
-          </Step>
-
-          <Step n={3} title="Teste a conexão">
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-              <button
-                onClick={testar}
-                disabled={status === 'testing' || !key.trim()}
-                style={{
-                  padding: '9px 20px', borderRadius: 8, border: 'none', cursor: key.trim() ? 'pointer' : 'default',
-                  background: key.trim() ? '#3b82f6' : '#e5e7eb', color: key.trim() ? 'white' : '#9ca3af',
-                  fontWeight: 700, fontSize: 13, transition: 'background 0.2s',
-                }}
-              >
-                {status === 'testing' ? '⏳ Testando…' : '⚡ Testar Conexão'}
-              </button>
-              <button
-                onClick={salvarSemTestar}
-                disabled={!key.trim()}
-                style={{
-                  padding: '9px 20px', borderRadius: 8, border: '1px solid #e5e7eb', cursor: key.trim() ? 'pointer' : 'default',
-                  background: 'white', color: '#374151', fontWeight: 600, fontSize: 13,
-                }}
-              >
-                Salvar sem testar
-              </button>
+          {geminiIncluded && (
+            <div style={{ padding: '12px 16px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, fontSize: 13, color: '#166534', marginBottom: 14 }}>
+              ✅ <strong>IA já está configurada e ativa.</strong> A plataforma fornece o Gemini incluído no seu plano — nenhuma configuração necessária.
             </div>
-            {status === 'error' && (
-              <div style={{ marginTop: 10, padding: '10px 14px', background: '#fee2e2', borderRadius: 8, fontSize: 12, color: '#b91c1c' }}>
-                ✕ {errorMsg}
+          )}
+
+          <button type="button" onClick={() => setShowKeyInput(v => !v)}
+            style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0, marginBottom: 12 }}>
+            {showKeyInput ? '▲ Ocultar' : '▼ Usar minha própria chave Gemini (opcional — sem limite de créditos)'}
+          </button>
+
+          {showKeyInput && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <Field label="API Key do Google Gemini" hint="Opcional. Se preenchida, substitui a chave da plataforma e remove o limite mensal de créditos.">
+                <input type="password" value={key} onChange={e => setKey(e.target.value)}
+                  placeholder="AIzaSy..." style={inputStyle} autoComplete="off" />
+              </Field>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <button onClick={testar} disabled={status === 'testing' || !key.trim()}
+                  style={{ padding: '9px 20px', borderRadius: 8, border: 'none', fontWeight: 700, fontSize: 13,
+                    background: key.trim() ? '#3b82f6' : '#e5e7eb', color: key.trim() ? 'white' : '#9ca3af', cursor: key.trim() ? 'pointer' : 'default' }}>
+                  {status === 'testing' ? '⏳ Testando…' : '⚡ Testar e Salvar'}
+                </button>
+                {integrations.geminiApiKey && (
+                  <button onClick={() => { onChange({ geminiApiKey: undefined }); setKey(''); setStatus(geminiIncluded ? 'ok' : 'idle'); }}
+                    style={{ padding: '9px 20px', borderRadius: 8, border: '1px solid #fca5a5', background: '#fff5f5', color: '#dc2626', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+                    Remover chave própria
+                  </button>
+                )}
               </div>
-            )}
-            {status === 'ok' && (
-              <div style={{ marginTop: 10, padding: '10px 14px', background: '#dcfce7', borderRadius: 8, fontSize: 12, color: '#166534', fontWeight: 600 }}>
-                ✓ Chave válida! As funcionalidades de IA estão ativas.
-              </div>
-            )}
-          </Step>
-        </div>
+              {status === 'error' && <div style={{ padding: '10px 14px', background: '#fee2e2', borderRadius: 8, fontSize: 12, color: '#b91c1c' }}>✕ {errorMsg}</div>}
+              {status === 'ok' && key && <div style={{ padding: '10px 14px', background: '#dcfce7', borderRadius: 8, fontSize: 12, color: '#166534', fontWeight: 600 }}>✓ Chave própria ativa — sem limite de créditos mensais.</div>}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -300,6 +289,7 @@ interface WhatsAppSectionProps {
   tenantId: string;
   onChange: (partial: Partial<TenantIntegrations>) => void;
   hasWhatsAppFeature: boolean;
+  evolutionApiIncluded: boolean;
 }
 
 // QR Code simulado (padrão visual de QR para demo; em produção vem da Evolution API)
@@ -422,7 +412,7 @@ const QRCodeDemo: React.FC<{ onConnected: () => void }> = ({ onConnected }) => {
 };
 
 const WhatsAppSection: React.FC<WhatsAppSectionProps> = ({
-  integrations, tenantId, onChange, hasWhatsAppFeature,
+  integrations, tenantId, onChange, hasWhatsAppFeature, evolutionApiIncluded,
 }) => {
   const [method, setMethod] = useState<'qrcode' | 'meta_api'>(
     integrations.whatsappMethod ?? 'qrcode'
@@ -430,9 +420,9 @@ const WhatsAppSection: React.FC<WhatsAppSectionProps> = ({
   const [showQR, setShowQR] = useState(false);
   const [qrConnected, setQrConnected] = useState(false);
 
-  // QR Code fields
-  const [evoUrl, setEvoUrl] = useState(integrations.evolutionApiUrl ?? '');
-  const [evoKey, setEvoKey] = useState(integrations.evolutionApiKey ?? '');
+  // QR Code fields — se incluso no plano, usa URL/Key da plataforma
+  const [evoUrl, setEvoUrl] = useState(integrations.evolutionApiUrl ?? (evolutionApiIncluded ? PLATFORM_EVOLUTION_URL : ''));
+  const [evoKey, setEvoKey] = useState(integrations.evolutionApiKey ?? (evolutionApiIncluded ? PLATFORM_EVOLUTION_KEY : ''));
   const [evoInstance, setEvoInstance] = useState(integrations.evolutionInstance ?? '');
 
   // Meta API fields
@@ -475,9 +465,20 @@ const WhatsAppSection: React.FC<WhatsAppSectionProps> = ({
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 1.18h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.37a16 16 0 0 0 5.72 5.72l.93-.93a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
           </div>
           <div>
-            <div style={{ fontWeight: 800, fontSize: 16, color: '#111827' }}>WhatsApp Business</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontWeight: 800, fontSize: 16, color: '#111827' }}>WhatsApp Business</span>
+              {evolutionApiIncluded && hasWhatsAppFeature && (
+                <span style={{ fontSize: 11, fontWeight: 700, background: '#dcfce7', color: '#166534', padding: '2px 10px', borderRadius: 999 }}>
+                  INCLUSO NO PLANO
+                </span>
+              )}
+            </div>
             <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
-              {hasWhatsAppFeature ? 'Atendimento e qualificação automática de leads' : '⚠️ Exclusivo plano Enterprise'}
+              {hasWhatsAppFeature
+                ? evolutionApiIncluded
+                  ? 'Apenas escaneie o QR Code — servidor já configurado pela plataforma'
+                  : 'Atendimento e qualificação automática de leads'
+                : '⚠️ Exclusivo plano Pro ou superior'}
             </div>
           </div>
         </div>
@@ -638,40 +639,32 @@ const WhatsAppSection: React.FC<WhatsAppSectionProps> = ({
                 </p>
               </Step>
 
-              <Step n={2} title="Informe os dados da sua instalação Evolution API">
-                <div style={{ display: 'grid', gap: 10 }}>
-                  <Field label="URL do servidor Evolution API" hint="Ex: https://evo.seudominio.com ou http://192.168.0.10:8080">
-                    <input
-                      value={evoUrl}
-                      onChange={e => setEvoUrl(e.target.value)}
-                      placeholder="https://evo.seudominio.com"
-                      style={inputStyle}
-                    />
-                  </Field>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                    <Field label="Chave de API (AUTHENTICATION_API_KEY)" hint="Definida na instalação do Evolution API.">
-                      <input
-                        type="password"
-                        value={evoKey}
-                        onChange={e => setEvoKey(e.target.value)}
-                        placeholder="minha-chave-secreta"
-                        style={inputStyle}
-                        autoComplete="off"
-                      />
-                    </Field>
-                    <Field label="Nome da instância (opcional)" hint="Identificador único. Se vazio, será gerado automaticamente.">
-                      <input
-                        value={evoInstance}
-                        onChange={e => setEvoInstance(e.target.value)}
-                        placeholder={`juriscloud-${tenantId.slice(0, 8)}`}
-                        style={inputStyle}
-                      />
-                    </Field>
-                  </div>
+              {evolutionApiIncluded ? (
+                <div style={{ padding: '12px 16px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, fontSize: 13, color: '#166534' }}>
+                  ✅ <strong>Servidor WhatsApp já configurado pela plataforma.</strong> Basta escanear o QR Code abaixo com o número do escritório.
                 </div>
-              </Step>
+              ) : (
+                <Step n={2} title="Informe os dados da sua instalação Evolution API">
+                  <div style={{ display: 'grid', gap: 10 }}>
+                    <Field label="URL do servidor Evolution API" hint="Ex: https://evo.seudominio.com ou http://192.168.0.10:8080">
+                      <input value={evoUrl} onChange={e => setEvoUrl(e.target.value)}
+                        placeholder="https://evo.seudominio.com" style={inputStyle} />
+                    </Field>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      <Field label="Chave de API (AUTHENTICATION_API_KEY)" hint="Definida na instalação do Evolution API.">
+                        <input type="password" value={evoKey} onChange={e => setEvoKey(e.target.value)}
+                          placeholder="minha-chave-secreta" style={inputStyle} autoComplete="off" />
+                      </Field>
+                      <Field label="Nome da instância (opcional)" hint="Identificador único. Se vazio, será gerado automaticamente.">
+                        <input value={evoInstance} onChange={e => setEvoInstance(e.target.value)}
+                          placeholder={`juriscloud-${tenantId.slice(0, 8)}`} style={inputStyle} />
+                      </Field>
+                    </div>
+                  </div>
+                </Step>
+              )}
 
-              <Step n={3} title="Conecte escaneando o QR Code">
+              <Step n={evolutionApiIncluded ? 2 : 3} title="Conecte escaneando o QR Code">
                 {!showQR ? (
                   <button
                     onClick={salvarQR}
@@ -830,6 +823,9 @@ const IntegrationSettings: React.FC<IntegrationSettingsProps> = ({ tenant, onTen
         integrations={integrations}
         onChange={handleChange}
         hasAiFeature={features.aiPetitionGenerator}
+        geminiIncluded={features.geminiIncluded}
+        aiMonthlyLimit={features.aiMonthlyLimit}
+        tenantId={tenantId}
       />
 
       <WhatsAppSection
@@ -837,6 +833,7 @@ const IntegrationSettings: React.FC<IntegrationSettingsProps> = ({ tenant, onTen
         tenantId={tenantId}
         onChange={handleChange}
         hasWhatsAppFeature={features.whatsappIntegration}
+        evolutionApiIncluded={features.evolutionApiIncluded}
       />
 
       <style>{`
