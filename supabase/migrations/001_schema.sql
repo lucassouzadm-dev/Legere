@@ -58,6 +58,28 @@ AS $$
   SELECT tenant_id FROM public.users WHERE auth_id = auth.uid() LIMIT 1;
 $$;
 
+-- ─── Função para leitura pública de tenant (fluxo de convite, sem auth) ─────────
+-- Usada por tenantsDb.getById quando o visitante ainda não está autenticado.
+-- SECURITY DEFINER permite contornar o RLS da tabela tenants.
+CREATE OR REPLACE FUNCTION public.get_tenant_for_invite(p_id TEXT)
+RETURNS TABLE (
+  id TEXT, name TEXT, slogan TEXT, cnpj TEXT, phone TEXT,
+  email TEXT, plan TEXT, logo_url TEXT,
+  created_at TIMESTAMPTZ, active BOOLEAN, trial_ends_at TIMESTAMPTZ
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT id, name, slogan, cnpj, phone, email, plan, logo_url,
+         created_at, active, trial_ends_at
+  FROM   public.tenants
+  WHERE  id = p_id AND active = TRUE
+  LIMIT  1;
+$$;
+GRANT EXECUTE ON FUNCTION public.get_tenant_for_invite(TEXT) TO anon, authenticated;
+
 -- ─── Trigger: cria user row automaticamente ao cadastrar no Supabase Auth ─────
 -- Metadata esperada em auth.signUp: tenant_id, name, role, oab_number, oab_state
 CREATE OR REPLACE FUNCTION public.handle_new_auth_user()

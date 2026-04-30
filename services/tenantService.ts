@@ -135,6 +135,11 @@ export function incrementAiUsage(tenantId: string): void {
 
 export const tenantsDb = {
   async getById(id: string): Promise<Tenant | null> {
+    // Tenta via RPC SECURITY DEFINER — funciona sem autenticação (fluxo de convite)
+    const { data: rpcData, error: rpcErr } = await supabase.rpc('get_tenant_for_invite', { p_id: id });
+    if (!rpcErr && Array.isArray(rpcData) && rpcData.length > 0) return dbToTenant(rpcData[0]);
+
+    // Fallback: query direta (funciona quando usuário já está autenticado)
     const { data, error } = await supabase.from('tenants').select('*').eq('id', id).single();
     if (error || !data) return null;
     return dbToTenant(data);
