@@ -570,49 +570,167 @@ const Pipeline: React.FC<PipelineProps> = ({ leads, onLeadMovido }) => {
 
 // ─── Aba: Contatos ────────────────────────────────────────────────────────────
 
-interface ContatosProps {
-  contatos: ContatoCRM[];
-  onContatoAtualizado: (c: ContatoCRM) => void;
+const ETAPA_OPTIONS = Object.values(EtapaConversa);
+const STATUS_OPTIONS = Object.values(StatusConversa);
+const CANAL_OPTIONS: Canal[] = ['whatsapp', 'instagram'];
+
+interface FormContato {
+  nome: string; telefone: string; email: string;
+  canal: Canal; etapa: EtapaConversa; status: StatusConversa;
+  score: number; tagsTexto: string; observacoes: string; instrucaoBot: string;
 }
 
-const Contatos: React.FC<ContatosProps> = ({ contatos, onContatoAtualizado }) => {
+const FORM_VAZIO: FormContato = {
+  nome: '', telefone: '', email: '', canal: 'whatsapp',
+  etapa: EtapaConversa.SAUDACAO, status: StatusConversa.ATIVA,
+  score: 0, tagsTexto: '', observacoes: '', instrucaoBot: '',
+};
+
+function contatoParaForm(c: ContatoCRM): FormContato {
+  return {
+    nome: c.nome, telefone: c.telefone, email: c.email ?? '',
+    canal: c.canal, etapa: c.etapa, status: c.status,
+    score: c.score, tagsTexto: c.tags.join(', '),
+    observacoes: c.observacoes ?? '', instrucaoBot: c.instrucaoBot ?? '',
+  };
+}
+
+interface ContatosProps {
+  contatos: ContatoCRM[];
+  tenantId: string;
+  onContatoAtualizado: (c: ContatoCRM) => void;
+  onNovoContato: (c: ContatoCRM) => void;
+}
+
+const Contatos: React.FC<ContatosProps> = ({ contatos, tenantId, onContatoAtualizado, onNovoContato }) => {
   const [busca, setBusca] = useState('');
   const [selecionado, setSelecionado] = useState<ContatoCRM | null>(null);
-  const [instrucao, setInstrucao] = useState('');
-  const [obs, setObs] = useState('');
+  const [modoNovo, setModoNovo] = useState(false);
+  const [form, setForm] = useState<FormContato>(FORM_VAZIO);
   const [salvo, setSalvo] = useState(false);
+  const [erro, setErro] = useState('');
 
   const filtrados = contatos.filter(c =>
-    c.nome.toLowerCase().includes(busca.toLowerCase()) || c.telefone.includes(busca)
+    c.nome.toLowerCase().includes(busca.toLowerCase()) ||
+    c.telefone.includes(busca) ||
+    (c.email ?? '').toLowerCase().includes(busca.toLowerCase())
   );
 
   function abrirDetalhe(c: ContatoCRM) {
     setSelecionado(c);
-    setInstrucao(c.instrucaoBot ?? '');
-    setObs(c.observacoes ?? '');
+    setModoNovo(false);
+    setForm(contatoParaForm(c));
     setSalvo(false);
+    setErro('');
   }
 
-  function salvarDetalhe() {
-    if (!selecionado) return;
-    onContatoAtualizado({ ...selecionado, instrucaoBot: instrucao.trim() || undefined, observacoes: obs });
-    setSelecionado(prev => prev ? { ...prev, instrucaoBot: instrucao.trim() || undefined, observacoes: obs } : prev);
-    setSalvo(true);
-    setTimeout(() => setSalvo(false), 2000);
+  function abrirNovo() {
+    setSelecionado(null);
+    setModoNovo(true);
+    setForm(FORM_VAZIO);
+    setSalvo(false);
+    setErro('');
   }
+
+  function fecharPainel() {
+    setSelecionado(null);
+    setModoNovo(false);
+  }
+
+  function campo(key: keyof FormContato, value: any) {
+    setForm(f => ({ ...f, [key]: value }));
+  }
+
+  function salvar() {
+    if (!form.nome.trim()) { setErro('Nome é obrigatório.'); return; }
+    if (!form.telefone.trim()) { setErro('Telefone é obrigatório.'); return; }
+    setErro('');
+    const tags = form.tagsTexto.split(',').map(t => t.trim()).filter(Boolean);
+
+    if (modoNovo) {
+      const novo: ContatoCRM = {
+        id: `c-${Date.now()}`,
+        nome: form.nome.trim(),
+        telefone: form.telefone.trim(),
+        email: form.email.trim() || undefined,
+        canal: form.canal,
+        etapa: form.etapa,
+        status: form.status,
+        score: form.score,
+        tags,
+        observacoes: form.observacoes,
+        instrucaoBot: form.instrucaoBot.trim() || undefined,
+        criadoEm: new Date(),
+        tenantId,
+      };
+      onNovoContato(novo);
+      setSelecionado(novo);
+      setModoNovo(false);
+      setSalvo(true);
+      setTimeout(() => setSalvo(false), 2000);
+    } else if (selecionado) {
+      const atualizado: ContatoCRM = {
+        ...selecionado,
+        nome: form.nome.trim(),
+        telefone: form.telefone.trim(),
+        email: form.email.trim() || undefined,
+        canal: form.canal,
+        etapa: form.etapa,
+        status: form.status,
+        score: form.score,
+        tags,
+        observacoes: form.observacoes,
+        instrucaoBot: form.instrucaoBot.trim() || undefined,
+      };
+      onContatoAtualizado(atualizado);
+      setSelecionado(atualizado);
+      setSalvo(true);
+      setTimeout(() => setSalvo(false), 2000);
+    }
+  }
+
+  const painelAberto = selecionado !== null || modoNovo;
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%', padding: '8px 10px', fontSize: 12,
+    border: '1px solid #e5e7eb', borderRadius: 7, boxSizing: 'border-box',
+    fontFamily: 'inherit', color: '#111827',
+  };
+  const labelStyle: React.CSSProperties = {
+    fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4,
+  };
 
   return (
     <div style={{ display: 'flex', gap: 16, minHeight: 500 }}>
-      {/* Lista */}
+      {/* ── Lista ────────────────────────────────────────────────── */}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ marginBottom: 12, position: 'relative', maxWidth: 360 }}>
-          <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
-          <input
-            value={busca}
-            onChange={e => setBusca(e.target.value)}
-            placeholder="Buscar contato..."
-            style={{ width: '100%', padding: '8px 12px 8px 34px', fontSize: 13, border: '1px solid #e5e7eb', borderRadius: 8, boxSizing: 'border-box' }}
-          />
+        {/* Toolbar */}
+        <div style={{ display: 'flex', gap: 10, marginBottom: 12, alignItems: 'center' }}>
+          <div style={{ flex: 1, position: 'relative', maxWidth: 360 }}>
+            <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
+            <input
+              value={busca}
+              onChange={e => setBusca(e.target.value)}
+              placeholder="Buscar por nome, telefone ou e-mail..."
+              style={{ width: '100%', padding: '8px 12px 8px 34px', fontSize: 13, border: '1px solid #e5e7eb', borderRadius: 8, boxSizing: 'border-box' }}
+            />
+          </div>
+          <button
+            onClick={abrirNovo}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '8px 16px', borderRadius: 8, border: 'none',
+              background: '#3b82f6', color: 'white', fontWeight: 700, fontSize: 13, cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            <Plus size={15} /> Novo Contato
+          </button>
+        </div>
+
+        {/* Contador */}
+        <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 10 }}>
+          {filtrados.length} contato{filtrados.length !== 1 ? 's' : ''}
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -624,138 +742,196 @@ const Contatos: React.FC<ContatosProps> = ({ contatos, onContatoAtualizado }) =>
                 key={c.id}
                 onClick={() => abrirDetalhe(c)}
                 style={{
-                  background: ativo ? '#eff6ff' : 'white', padding: '14px 18px', borderRadius: 10,
-                  border: `1px solid ${ativo ? '#93c5fd' : '#e5e7eb'}`, display: 'flex', alignItems: 'center', gap: 16,
+                  background: ativo ? '#eff6ff' : 'white', padding: '13px 16px', borderRadius: 10,
+                  border: `1px solid ${ativo ? '#93c5fd' : '#e5e7eb'}`, display: 'flex', alignItems: 'center', gap: 14,
                   cursor: 'pointer', transition: 'all 0.15s',
                 }}
               >
                 <div style={{
-                  width: 44, height: 44, borderRadius: '50%', background: '#eff6ff',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 700, color: '#3b82f6', flexShrink: 0,
+                  width: 42, height: 42, borderRadius: '50%', background: ativo ? '#dbeafe' : '#eff6ff',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, color: '#3b82f6', flexShrink: 0,
                 }}>
                   {c.nome.charAt(0).toUpperCase()}
                 </div>
-
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <span style={{ fontWeight: 700, fontSize: 14, color: '#111827' }}>{c.nome}</span>
-                    <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 10, background: badge.color + '20', color: badge.color, fontWeight: 600 }}>{badge.label}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <span style={{ fontWeight: 700, fontSize: 13, color: '#111827' }}>{c.nome}</span>
+                    <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 10, background: badge.color + '20', color: badge.color, fontWeight: 600 }}>{badge.label}</span>
                     {c.canal === 'whatsapp'
-                      ? <MessageCircle size={13} style={{ color: '#25d366' }} />
-                      : <Instagram size={13} style={{ color: '#e1306c' }} />
+                      ? <MessageCircle size={12} style={{ color: '#25d366' }} />
+                      : <Instagram size={12} style={{ color: '#e1306c' }} />
                     }
                     {c.instrucaoBot && (
-                      <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, background: '#f0fdf4', color: '#16a34a', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 3 }}>
-                        <Bot size={10} /> Bot instruído
+                      <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 10, background: '#f0fdf4', color: '#16a34a', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 3 }}>
+                        <Bot size={9} /> Bot instruído
                       </span>
                     )}
                   </div>
-                  <div style={{ fontSize: 12, color: '#6b7280', marginTop: 3, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                  <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                     <span>📞 {c.telefone}</span>
-                    <span>Etapa: {etapaLabel(c.etapa)}</span>
-                    {c.ultimaMensagem && <span>⏱ {timeAgo(c.ultimaMensagem)}</span>}
+                    {c.email && <span>✉ {c.email}</span>}
+                    <span>{etapaLabel(c.etapa)}</span>
                   </div>
                   {c.tags.length > 0 && (
-                    <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
                       {c.tags.map(t => (
-                        <span key={t} style={{ fontSize: 10, padding: '2px 6px', borderRadius: 6, background: '#f3f4f6', color: '#374151' }}>{t}</span>
+                        <span key={t} style={{ fontSize: 10, padding: '1px 6px', borderRadius: 6, background: '#f3f4f6', color: '#374151' }}>{t}</span>
                       ))}
                     </div>
                   )}
                 </div>
-
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <div style={{ fontSize: 22, fontWeight: 800, color: scoreColor(c.score) }}>{c.score}</div>
-                  <div style={{ fontSize: 11, color: '#9ca3af' }}>Score</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: scoreColor(c.score) }}>{c.score}</div>
+                  <div style={{ fontSize: 10, color: '#9ca3af' }}>Score</div>
                 </div>
               </div>
             );
           })}
           {filtrados.length === 0 && (
-            <div style={{ textAlign: 'center', padding: '40px 0', color: '#9ca3af', fontSize: 14 }}>
-              Nenhum contato encontrado
+            <div style={{ textAlign: 'center', padding: '48px 0', color: '#9ca3af', fontSize: 14 }}>
+              {busca ? 'Nenhum contato encontrado para essa busca.' : 'Nenhum contato cadastrado. Clique em "Novo Contato" para começar.'}
             </div>
           )}
         </div>
       </div>
 
-      {/* Painel de detalhe */}
-      {selecionado && (
-        <div style={{ width: 340, flexShrink: 0, border: '1px solid #e5e7eb', borderRadius: 12, background: 'white', padding: 20, display: 'flex', flexDirection: 'column', gap: 16, alignSelf: 'flex-start' }}>
-          {/* Cabeçalho */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 800, color: '#3b82f6', flexShrink: 0 }}>
-              {selecionado.nome.charAt(0).toUpperCase()}
-            </div>
+      {/* ── Painel de detalhe / formulário ───────────────────────── */}
+      {painelAberto && (
+        <div style={{ width: 360, flexShrink: 0, border: '1px solid #e5e7eb', borderRadius: 12, background: 'white', display: 'flex', flexDirection: 'column', alignSelf: 'flex-start', overflow: 'hidden' }}>
+          {/* Header do painel */}
+          <div style={{ padding: '14px 18px', borderBottom: '1px solid #f3f4f6', background: modoNovo ? '#f0fdf4' : '#f9fafb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontWeight: 700, fontSize: 14, color: '#111827' }}>
+              {modoNovo ? '+ Novo Contato' : 'Editar Contato'}
+            </span>
+            <button onClick={fecharPainel} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', padding: 2, display: 'flex', alignItems: 'center' }}>
+              <XCircle size={18} />
+            </button>
+          </div>
+
+          {/* Formulário */}
+          <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto', maxHeight: 680 }}>
+
+            {/* Nome */}
             <div>
-              <div style={{ fontWeight: 700, fontSize: 15, color: '#111827' }}>{selecionado.nome}</div>
-              <div style={{ fontSize: 12, color: '#6b7280' }}>{selecionado.telefone}</div>
+              <label style={labelStyle}>Nome *</label>
+              <input value={form.nome} onChange={e => campo('nome', e.target.value)}
+                placeholder="Nome completo" style={inputStyle} />
+            </div>
+
+            {/* Telefone + Canal */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8 }}>
+              <div>
+                <label style={labelStyle}>Telefone *</label>
+                <input value={form.telefone} onChange={e => campo('telefone', e.target.value)}
+                  placeholder="+55 11 99999-9999" style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>Canal</label>
+                <select value={form.canal} onChange={e => campo('canal', e.target.value as Canal)}
+                  style={{ ...inputStyle, width: 'auto', cursor: 'pointer' }}>
+                  {CANAL_OPTIONS.map(c => (
+                    <option key={c} value={c}>{c === 'whatsapp' ? 'WhatsApp' : 'Instagram'}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* E-mail */}
+            <div>
+              <label style={labelStyle}>E-mail</label>
+              <input value={form.email} onChange={e => campo('email', e.target.value)}
+                placeholder="email@exemplo.com" type="email" style={inputStyle} />
+            </div>
+
+            {/* Status + Etapa */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <div>
+                <label style={labelStyle}>Status</label>
+                <select value={form.status} onChange={e => campo('status', e.target.value as StatusConversa)}
+                  style={{ ...inputStyle, cursor: 'pointer' }}>
+                  {STATUS_OPTIONS.map(s => (
+                    <option key={s} value={s}>{statusBadge(s as StatusConversa).label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>Etapa</label>
+                <select value={form.etapa} onChange={e => campo('etapa', e.target.value as EtapaConversa)}
+                  style={{ ...inputStyle, cursor: 'pointer' }}>
+                  {ETAPA_OPTIONS.map(e => (
+                    <option key={e} value={e}>{etapaLabel(e as EtapaConversa)}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Score */}
+            <div>
+              <label style={labelStyle}>Score de qualificação: <strong style={{ color: scoreColor(form.score) }}>{form.score}</strong></label>
+              <input type="range" min={0} max={100} value={form.score}
+                onChange={e => campo('score', Number(e.target.value))}
+                style={{ width: '100%', cursor: 'pointer' }} />
+            </div>
+
+            {/* Tags */}
+            <div>
+              <label style={labelStyle}>Tags <span style={{ fontWeight: 400, color: '#9ca3af' }}>(separadas por vírgula)</span></label>
+              <input value={form.tagsTexto} onChange={e => campo('tagsTexto', e.target.value)}
+                placeholder="Ex: Trabalhista, Urgente, Indicação" style={inputStyle} />
+            </div>
+
+            <hr style={{ border: 'none', borderTop: '1px solid #f3f4f6', margin: '4px 0' }} />
+
+            {/* Instruções do Bot */}
+            <div>
+              <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 5 }}>
+                <Bot size={13} style={{ color: '#3b82f6' }} /> Instruções para o Bot
+              </label>
+              <textarea value={form.instrucaoBot} onChange={e => campo('instrucaoBot', e.target.value)}
+                rows={3}
+                placeholder="Ex: Lead interessado em divórcio consensual. Focar em agendar consulta com a Dra. Ana."
+                style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 }} />
+            </div>
+
+            {/* Observações */}
+            <div>
+              <label style={labelStyle}>Observações internas</label>
+              <textarea value={form.observacoes} onChange={e => campo('observacoes', e.target.value)}
+                rows={3}
+                placeholder="Notas que ficam visíveis apenas para a equipe..."
+                style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 }} />
+            </div>
+
+            {/* Erro */}
+            {erro && (
+              <div style={{ fontSize: 12, color: '#dc2626', background: '#fef2f2', padding: '8px 12px', borderRadius: 7 }}>
+                {erro}
+              </div>
+            )}
+
+            {/* Botões */}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={salvar}
+                style={{
+                  flex: 1, padding: '10px 0', borderRadius: 8, border: 'none',
+                  background: salvo ? '#22c55e' : '#3b82f6', color: 'white',
+                  fontWeight: 700, fontSize: 13, cursor: 'pointer', transition: 'background 0.2s',
+                }}
+              >
+                {salvo ? '✓ Salvo!' : modoNovo ? 'Cadastrar Contato' : 'Salvar Alterações'}
+              </button>
+              <button
+                onClick={fecharPainel}
+                style={{
+                  padding: '10px 16px', borderRadius: 8, border: '1px solid #e5e7eb',
+                  background: 'white', color: '#374151', fontWeight: 600, fontSize: 13, cursor: 'pointer',
+                }}
+              >
+                Cancelar
+              </button>
             </div>
           </div>
-
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 10, background: statusBadge(selecionado.status).color + '20', color: statusBadge(selecionado.status).color, fontWeight: 600 }}>
-              {statusBadge(selecionado.status).label}
-            </span>
-            <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 10, background: '#f3f4f6', color: '#374151', fontWeight: 600 }}>
-              {etapaLabel(selecionado.etapa)}
-            </span>
-            <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 10, background: '#fdf4ff', color: '#9333ea', fontWeight: 700 }}>
-              Score {selecionado.score}
-            </span>
-          </div>
-
-          <hr style={{ border: 'none', borderTop: '1px solid #f3f4f6', margin: 0 }} />
-
-          {/* Instruções do Bot */}
-          <div>
-            <label style={{ fontSize: 13, fontWeight: 700, color: '#111827', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-              <Bot size={14} style={{ color: '#3b82f6' }} /> Instruções para o Bot
-            </label>
-            <p style={{ margin: '0 0 8px 0', fontSize: 12, color: '#6b7280', lineHeight: 1.5 }}>
-              Defina o objetivo da conversa para este contato. O assistente virtual usará essas instruções ao interagir.
-            </p>
-            <textarea
-              value={instrucao}
-              onChange={e => setInstrucao(e.target.value)}
-              rows={4}
-              placeholder="Ex: Este contato demonstrou interesse em ação trabalhista. Focar em coletar informações sobre o vínculo empregatício e agendar consulta urgente com Dr. Paulo."
-              style={{
-                width: '100%', padding: '9px 12px', fontSize: 12, border: '1px solid #e5e7eb',
-                borderRadius: 8, boxSizing: 'border-box', resize: 'vertical', fontFamily: 'inherit',
-                lineHeight: 1.5, color: '#111827',
-              }}
-            />
-          </div>
-
-          {/* Observações */}
-          <div>
-            <label style={{ fontSize: 13, fontWeight: 700, color: '#111827', display: 'block', marginBottom: 6 }}>
-              Observações
-            </label>
-            <textarea
-              value={obs}
-              onChange={e => setObs(e.target.value)}
-              rows={3}
-              placeholder="Notas internas sobre este contato..."
-              style={{
-                width: '100%', padding: '9px 12px', fontSize: 12, border: '1px solid #e5e7eb',
-                borderRadius: 8, boxSizing: 'border-box', resize: 'vertical', fontFamily: 'inherit',
-                lineHeight: 1.5, color: '#111827',
-              }}
-            />
-          </div>
-
-          <button
-            onClick={salvarDetalhe}
-            style={{
-              padding: '10px 0', borderRadius: 8, border: 'none',
-              background: salvo ? '#22c55e' : '#3b82f6', color: 'white',
-              fontWeight: 700, fontSize: 14, cursor: 'pointer', transition: 'background 0.2s',
-            }}
-          >
-            {salvo ? '✓ Salvo!' : 'Salvar Alterações'}
-          </button>
         </div>
       )}
     </div>
@@ -1008,7 +1184,9 @@ const WhatsAppCRM: React.FC = () => {
       {aba === 'contatos' && (
         <Contatos
           contatos={contatos}
+          tenantId={tenantId}
           onContatoAtualizado={c => setContatos(prev => prev.map(x => x.id === c.id ? c : x))}
+          onNovoContato={c => setContatos(prev => [...prev, c])}
         />
       )}
       {aba === 'assistente' && (
