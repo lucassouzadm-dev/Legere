@@ -229,6 +229,9 @@ function deadlineToDb(d: any) {
   const extraData = JSON.stringify({
     _v: 2, notes: d.notes ?? '', mentions: d.mentions ?? [],
     publicationId: d.publicationId ?? null, originalDescription: legacyDesc,
+    notified5d:    d.notified5d    ?? false,
+    notified1d:    d.notified1d    ?? false,
+    notifiedFatal: d.notifiedFatal ?? false,
   });
   return {
     id: d.id, title: d.type ?? d.title ?? null, date: d.date,
@@ -243,6 +246,7 @@ function deadlineToDb(d: any) {
 }
 function dbToDeadline(r: any) {
   let notes = '', mentions: string[] = [], publicationId: string | null = null;
+  let notified5d = false, notified1d = false, notifiedFatal = false;
   let description: string | null = r.description;
   if (r.description) {
     try {
@@ -251,6 +255,9 @@ function dbToDeadline(r: any) {
         notes = parsed.notes ?? ''; mentions = parsed.mentions ?? [];
         publicationId = parsed.publicationId ?? null;
         description = parsed.originalDescription ?? null;
+        notified5d    = parsed.notified5d    ?? false;
+        notified1d    = parsed.notified1d    ?? false;
+        notifiedFatal = parsed.notifiedFatal ?? false;
       }
     } catch { description = r.description; }
   }
@@ -262,6 +269,7 @@ function dbToDeadline(r: any) {
     responsibleName: r.responsible_name, priority: r.priority,
     status: r.status, description, summary: description,
     notes, mentions, publicationId, tenantId: r.tenant_id,
+    notified5d, notified1d, notifiedFatal,
   };
 }
 

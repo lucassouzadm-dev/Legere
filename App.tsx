@@ -277,6 +277,69 @@ const App: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hearings.length, currentUser?.id]);
 
+  // ── Prazos: alertas automáticos 5d / 1d / Fatal ──────────────────────────
+
+  useEffect(() => {
+    if (!deadlines.length || !currentUser?.id) return;
+    const now = new Date();
+    const updates: string[] = [];
+
+    deadlines.forEach((d: any) => {
+      if (d.status === 'DONE' || !d.date) return;
+
+      // Considera o fim do dia como limite (23:59:59)
+      const deadline = new Date(d.date + 'T23:59:59');
+      const diffMs   = deadline.getTime() - now.getTime();
+      const diffD    = diffMs / (1000 * 60 * 60 * 24);
+
+      // Destinatário: responsibleId preferido; fallback por nome; fallback currentUser
+      const responsibleUser = d.responsibleId
+        ? users.find((u: any) => u.id === d.responsibleId)
+        : users.find((u: any) => u.name === d.responsible);
+      const recipientId = responsibleUser?.id ?? currentUser.id;
+
+      const label   = d.type ?? d.title ?? 'Prazo';
+      const process = d.case ?? d.caseName ?? '';
+      const suffix  = process ? ` — ${process}` : '';
+      const dateFmt = new Date(d.date + 'T12:00').toLocaleDateString('pt-BR');
+
+      if (!d.notified5d && diffD <= 5 && diffD > 1) {
+        addNotification(
+          `⚠️ Prazo em ${Math.ceil(diffD)}d: ${label}`,
+          `O prazo "${label}"${suffix} vence em ${dateFmt}. Providencie com antecedência.`,
+          recipientId
+        );
+        updates.push(d.id + ':5d');
+      }
+      if (!d.notified1d && diffD <= 1 && diffD > 0) {
+        addNotification(
+          `🚨 Prazo AMANHÃ: ${label}`,
+          `Atenção! O prazo "${label}"${suffix} vence amanhã (${dateFmt}).`,
+          recipientId
+        );
+        updates.push(d.id + ':1d');
+      }
+      if (!d.notifiedFatal && diffD <= 0 && diffD > -1) {
+        addNotification(
+          `💀 PRAZO FATAL HOJE: ${label}`,
+          `URGENTE! O prazo "${label}"${suffix} vence HOJE (${dateFmt}). Ação imediata necessária.`,
+          recipientId
+        );
+        updates.push(d.id + ':fatal');
+      }
+    });
+
+    if (updates.length) {
+      handleSetDeadlines((prev: any[]) => prev.map((d: any) => ({
+        ...d,
+        notified5d:    d.notified5d    || updates.includes(d.id + ':5d'),
+        notified1d:    d.notified1d    || updates.includes(d.id + ':1d'),
+        notifiedFatal: d.notifiedFatal || updates.includes(d.id + ':fatal'),
+      })));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deadlines.length, currentUser?.id]);
+
   // ── Publicações → Processo ────────────────────────────────────────────────
 
   const handleRegisterCaseFromPublication = useCallback((pub: any) => {
@@ -440,6 +503,21 @@ const App: React.FC = () => {
 
   const totalUnreadChat = useMemo(() => Object.values(unreadChatCounts).reduce((a, b) => a + (b as number), 0), [unreadChatCounts]);
   const unreadPubs = useMemo(() => publications.filter((p: any) => p.status === 'unread' && p.lawyerId === currentUser?.id).length, [publications, currentUser]);
+
+  // Prazos vencendo em ≤5 dias (PENDING) atribuídos ao usuário atual
+  const urgentDeadlines = useMemo(() => {
+    const now = new Date();
+    return deadlines.filter((d: any) => {
+      if (d.status === 'DONE' || !d.date) return false;
+      const responsibleUser = d.responsibleId
+        ? users.find((u: any) => u.id === d.responsibleId)
+        : users.find((u: any) => u.name === d.responsible);
+      const isMyDeadline = responsibleUser?.id === currentUser?.id || (!responsibleUser && currentUser?.role === 'ADMIN');
+      if (!isMyDeadline) return false;
+      const diffD = (new Date(d.date + 'T23:59:59').getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+      return diffD <= 5;
+    }).length;
+  }, [deadlines, currentUser, users]);
 
   // ── DJEN sync ─────────────────────────────────────────────────────────────
 
@@ -731,6 +809,7 @@ const App: React.FC = () => {
       onLogout={handleLogout}
       notifications={notifications} setNotifications={handleSetNotifications}
       unreadPublications={unreadPubs} djenSyncing={djenSyncing}
+      urgentDeadlines={urgentDeadlines}
       tenant={tenant}
       totalUnreadChat={totalUnreadChat}
       allData={{ clients, cases, tasks, deadlines, transactions, events }}

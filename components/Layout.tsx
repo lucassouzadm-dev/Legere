@@ -15,6 +15,7 @@ interface LayoutProps {
   notifications: any[];
   setNotifications: React.Dispatch<React.SetStateAction<any[]>>;
   unreadPublications?: number;
+  urgentDeadlines?: number;
   djenSyncing?: boolean;
   tenant: Tenant | null;
   allData: {
@@ -34,7 +35,7 @@ interface LayoutProps {
 const Layout: React.FC<LayoutProps> = ({
   children, activeModule, setActiveModule, isDarkMode, toggleDarkMode,
   userRole, userName, userId, onLogout, notifications, setNotifications,
-  unreadPublications = 0, djenSyncing = false, tenant, totalUnreadChat = 0,
+  unreadPublications = 0, urgentDeadlines = 0, djenSyncing = false, tenant, totalUnreadChat = 0,
   showWhatsAppCRM = false, allowedModules,
 }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth > 768);
@@ -116,6 +117,9 @@ const Layout: React.FC<LayoutProps> = ({
                 <item.icon className={`w-5 h-5 ${activeModule === item.id ? 'text-white' : 'text-navy-300 group-hover:scale-110'}`} />
                 {item.id === 'publications' && unreadPublications > 0 && (
                   <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-[9px] text-white flex items-center justify-center rounded-full font-black shadow">{unreadPublications > 9 ? '9+' : unreadPublications}</span>
+                )}
+                {item.id === 'deadlines' && urgentDeadlines > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-orange-500 text-[9px] text-white flex items-center justify-center rounded-full font-black shadow">{urgentDeadlines > 9 ? '9+' : urgentDeadlines}</span>
                 )}
                 {item.id === 'chat' && totalUnreadChat > 0 && (
                   <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-blue-500 text-[9px] text-white flex items-center justify-center rounded-full font-black shadow">{totalUnreadChat > 9 ? '9+' : totalUnreadChat}</span>
