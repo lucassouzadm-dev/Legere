@@ -94,27 +94,25 @@ export const tenantsDb = {
   },
 
   async create(tenant: Omit<Tenant, 'id' | 'createdAt'>): Promise<Tenant | null> {
-    const newTenant = {
-      id: `tenant-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      name: tenant.name,
-      slogan: tenant.slogan ?? null,
-      cnpj: tenant.cnpj ?? null,
-      phone: tenant.phone ?? null,
-      email: tenant.email.toLowerCase(),
-      plan: tenant.plan,
-      logo_url: tenant.logoUrl ?? null,
-      created_at: new Date().toISOString(),
-      active: true,
-      trial_ends_at: tenant.trialEndsAt ?? null,
-    };
-    const { data, error } = await supabase.from('tenants').insert(newTenant).select().single();
-    if (error || !data) {
+    const id = `tenant-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    // Usa RPC com SECURITY DEFINER para contornar RLS no cadastro público
+    const { data, error } = await supabase.rpc('create_tenant', {
+      p_id:       id,
+      p_name:     tenant.name,
+      p_email:    tenant.email.toLowerCase(),
+      p_plan:     tenant.plan,
+      p_slogan:   tenant.slogan   ?? null,
+      p_cnpj:     tenant.cnpj     ?? null,
+      p_phone:    tenant.phone    ?? null,
+    });
+    if (error || !data || (Array.isArray(data) && data.length === 0)) {
       console.error('[tenantsDb] create error:', error);
-      // fallback local para demo sem DB
-      const t: Tenant = { ...tenant, id: newTenant.id, createdAt: newTenant.created_at, active: true };
+      // Fallback local apenas se Supabase não configurado
+      const t: Tenant = { ...tenant, id, createdAt: new Date().toISOString(), active: true };
       return t;
     }
-    return dbToTenant(data);
+    const row = Array.isArray(data) ? data[0] : data;
+    return dbToTenant(row);
   },
 
   async update(id: string, fields: Partial<Tenant>): Promise<void> {
