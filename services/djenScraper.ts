@@ -200,7 +200,20 @@ function toIsoDate(s: string): string {
 
 // ─── Sincronização principal ──────────────────────────────────────────────────
 
-export async function syncDjenPublications(caseCnjs: string[] = []): Promise<{
+// Tipo mínimo de advogado aceito como parâmetro externo (compatível com User do React state)
+export interface LawyerParam {
+  id: string;
+  name: string;
+  oab_number?: string | null;
+  oabNumber?: string | null;
+  oab_state?: string | null;
+  oabState?: string | null;
+}
+
+export async function syncDjenPublications(
+  caseCnjs: string[] = [],
+  knownLawyers?: LawyerParam[],
+): Promise<{
   total: number;
   novas: number;
   errors: string[];
@@ -209,12 +222,30 @@ export async function syncDjenPublications(caseCnjs: string[] = []): Promise<{
 }> {
   try {
     // 1. Advogados com OAB cadastrado
-    const { data: lawyers, error: lawyersErr } = await supabase
-      .from('users')
-      .select('id, name, oab_number, oab_state')
-      .not('oab_number', 'is', null);
+    // Preferência: lista passada pelo chamador (React state — funciona em modo localStorage).
+    // Fallback: query direta ao Supabase (funciona quando conectado).
+    let lawyers: Array<{ id: string; name: string; oab_number: string | null; oab_state: string | null }>;
 
-    if (lawyersErr || !lawyers?.length) {
+    if (knownLawyers && knownLawyers.length > 0) {
+      // Normaliza campos snake_case / camelCase vindos do React state
+      lawyers = knownLawyers
+        .filter(u => u.oab_number || u.oabNumber)
+        .map(u => ({
+          id:         u.id,
+          name:       u.name,
+          oab_number: (u.oab_number ?? u.oabNumber ?? null) as string | null,
+          oab_state:  (u.oab_state  ?? u.oabState  ?? null) as string | null,
+        }));
+    } else {
+      // Fallback: busca no Supabase
+      const { data, error: lawyersErr } = await supabase
+        .from('users')
+        .select('id, name, oab_number, oab_state')
+        .not('oab_number', 'is', null);
+      lawyers = (lawyersErr ? [] : data ?? []) as typeof lawyers;
+    }
+
+    if (!lawyers.length) {
       return {
         total: 0, novas: 0, errors: ['Nenhum advogado com OAB cadastrado.'],
         message: 'Configure os números OAB em Configurações.',

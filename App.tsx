@@ -409,13 +409,14 @@ const App: React.FC = () => {
     try {
       const { syncDjenPublications } = await import('./services/djenScraper');
       const cnjs = cases.map((c: any) => c.cnj).filter(Boolean);
-      const result = await syncDjenPublications(cnjs);
+      // Passa os usuários já carregados no estado (funciona em modo localStorage e Supabase)
+      const result = await syncDjenPublications(cnjs, users);
       setDjenSyncMsg(result.novas > 0 ? `✅ ${result.novas} nova(s) publicação(ões)!` : `✅ ${result.message}`);
       const fresh = await publicationsDb.getAll();
       setPublications(fresh);
     } catch (e: any) { setDjenSyncMsg(`❌ Erro: ${e?.message ?? e}`); }
     setDjenSyncing(false);
-  }, [djenSyncing, cases, features.djenAutoSync]);
+  }, [djenSyncing, cases, features.djenAutoSync, users]);
 
   // ── Onboarding: registrar novo escritório ─────────────────────────────────
 
@@ -688,7 +689,7 @@ const App: React.FC = () => {
                 </button>
               </div>
           )}
-          {activeModule === 'settings'     && <Settings users={users} setUsers={handleSetUsers} clients={clients} currentUser={currentUser} tenant={tenant} onTenantUpdate={(updated) => { setTenant(updated); setCurrentTenant(updated); }} resetDatabase={() => { localStorage.clear(); window.location.reload(); }} />}
+          {activeModule === 'settings'     && <Settings users={users} setUsers={handleSetUsers} clients={clients} currentUser={currentUser} tenant={tenant} onTenantUpdate={(updated) => { setTenant(updated); setCurrentTenant(updated); }} onCurrentUserUpdate={setCurrentUser} resetDatabase={() => { localStorage.clear(); window.location.reload(); }} />}
         </>
       )}
     </Layout>

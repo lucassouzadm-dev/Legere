@@ -14,6 +14,7 @@ interface SettingsProps {
   currentUser: any;
   tenant: Tenant | null;
   onTenantUpdate?: (updated: Tenant) => void;
+  onCurrentUserUpdate?: (updated: any) => void;
   resetDatabase: () => void;
 }
 
@@ -27,7 +28,7 @@ const roleLabels: Record<UserRole, { label: string; color: string }> = {
 
 const fmt = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
 
-const Settings: React.FC<SettingsProps> = ({ users, setUsers, clients, currentUser, tenant, onTenantUpdate, resetDatabase }) => {
+const Settings: React.FC<SettingsProps> = ({ users, setUsers, clients, currentUser, tenant, onTenantUpdate, onCurrentUserUpdate, resetDatabase }) => {
   const [activeTab, setActiveTab] = useState<'profile' | 'usuarios' | 'pendentes' | 'clientes' | 'plano' | 'permissoes' | 'integracoes' | 'sistema'>('profile');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<any>(null);
@@ -69,7 +70,10 @@ const Settings: React.FC<SettingsProps> = ({ users, setUsers, clients, currentUs
       oabNumber: profileOabNumber.trim() || null,
       oabState:  profileOabState.trim().toUpperCase().slice(0, 2) || null,
     };
+    // Atualiza lista global de usuários (para DJEN sync e outros módulos)
     setUsers((prev: any[]) => prev.map(u => u.id === currentUser.id ? updated : u));
+    // Atualiza currentUser no App para refletir imediatamente na sessão ativa
+    onCurrentUserUpdate?.(updated);
     await usersDb.upsert(updated);
     setProfileSaved(true);
     setTimeout(() => setProfileSaved(false), 2500);
