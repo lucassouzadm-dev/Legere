@@ -41,7 +41,7 @@ function dbToUser(r: any) {
   return {
     id: r.id, name: r.name, email: r.email, role: r.role,
     status: r.status, monthlyGoal: r.monthly_goal,
-    avatar: r.avatar,
+    avatar: r.avatar, password: r.password ?? null,
     oabNumber: r.oab_number ?? null, oabState: r.oab_state ?? null,
     tenantId: r.tenant_id,
   };
