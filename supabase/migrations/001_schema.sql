@@ -342,6 +342,19 @@ BEGIN
 END;
 $$;
 
+-- ─── Grants explícitos para roles anon e authenticated ──────────────────────
+-- Necessário quando tabelas são criadas via SQL Editor (não herdam grants automáticos)
+GRANT USAGE ON SCHEMA public TO anon, authenticated;
+GRANT ALL ON ALL TABLES    IN SCHEMA public TO anon, authenticated;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated;
+
+-- Garante grants em tabelas criadas no futuro
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT ALL ON TABLES TO anon, authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT ALL ON SEQUENCES TO anon, authenticated;
+
 -- ─── Índices de performance ───────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_clients_tenant      ON public.clients(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_cases_tenant        ON public.cases(tenant_id);

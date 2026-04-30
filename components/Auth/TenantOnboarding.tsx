@@ -62,7 +62,7 @@ const TenantOnboarding: React.FC<TenantOnboardingProps> = ({ onComplete, onBack 
     if (adminPass.length < 8) { alert('A senha deve ter pelo menos 8 caracteres.'); return; }
     onComplete({
       firmName, slogan, cnpj, phone, email: firmEmail, plan: selectedPlan,
-      adminName, adminPassword: adminPass,
+      adminName, adminEmail, adminPassword: adminPass,
       oabNumber: oabNumber || undefined,
       oabState: oabState || undefined,
     });
