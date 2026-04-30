@@ -395,15 +395,39 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (!currentUser?.id) return;
-    const ch = supabase.channel(`chat-rt-${currentUser.id}`)
+    const tenantId = getCurrentTenantId();
+
+    // Canal 1: mensagens de chat em tempo real
+    const chatCh = supabase.channel(`chat-rt-${currentUser.id}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, (payload: any) => {
         const r = payload.new;
-        if (r.sender_id === currentUser.id || r.tenant_id !== getCurrentTenantId()) return;
+        if (r.sender_id === currentUser.id || r.tenant_id !== tenantId) return;
         const incoming = { id: r.id, senderId: r.sender_id, senderName: r.sender_name, content: r.content, time: r.time, chatId: r.chat_id };
         setChatMessages(prev => prev.some(m => String(m.id) === String(incoming.id)) ? prev : [...prev, incoming]);
         processIncomingRef.current(incoming);
       }).subscribe();
-    return () => { supabase.removeChannel(ch); };
+
+    // Canal 2: notificações em tempo real (alertas de outros usuários do tenant)
+    const notifCh = supabase.channel(`notif-rt-${currentUser.id}`)
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'notifications',
+        filter: `recipient_id=eq.${currentUser.id}`,
+      }, (payload: any) => {
+        const r = payload.new;
+        if (r.tenant_id !== tenantId) return;
+        const n = {
+          id: r.id, title: r.title, message: r.message,
+          recipientId: r.recipient_id, time: r.time, read: r.read ?? false,
+          tenantId: r.tenant_id,
+        };
+        // Evita duplicatas (addNotification já pode ter inserido localmente)
+        setNotifications(prev => prev.some(x => x.id === n.id) ? prev : [n, ...prev]);
+      }).subscribe();
+
+    return () => {
+      supabase.removeChannel(chatCh);
+      supabase.removeChannel(notifCh);
+    };
   }, [currentUser?.id]);
 
   // ── Chat unread ───────────────────────────────────────────────────────────
@@ -428,12 +452,35 @@ const App: React.FC = () => {
       const cnjs = cases.map((c: any) => c.cnj).filter(Boolean);
       // Passa os usuários já carregados no estado (funciona em modo localStorage e Supabase)
       const result = await syncDjenPublications(cnjs, users);
-      setDjenSyncMsg(result.novas > 0 ? `✅ ${result.novas} nova(s) publicação(ões)!` : `✅ ${result.message}`);
-      const fresh = await publicationsDb.getAll();
+
+      // ── Mensagem de resultado com ícone correto ────────────────────────────
+      if (result.errors?.length) {
+        setDjenSyncMsg(`❌ ${result.message}`);
+      } else if (result.novas > 0) {
+        setDjenSyncMsg(`✅ ${result.novas} nova(s) publicação(ões) encontrada(s)!`);
+        // Notificação in-app para o usuário logado
+        if (currentUser) {
+          addNotification(
+            '📰 Nova Publicação no DJEN',
+            `${result.novas} nova(s) publicação(ões) não lida(s). Clique para visualizar.`,
+            currentUser.id
+          );
+        }
+      } else {
+        setDjenSyncMsg(`✅ ${result.message}`);
+      }
+
+      // ── Atualiza publicações e recarrega notificações do banco ────────────
+      const [fresh, freshNotifs] = await Promise.all([
+        publicationsDb.getAll(),
+        notificationsDb.getAll(),
+      ]);
       setPublications(fresh);
+      setNotifications(freshNotifs);
+
     } catch (e: any) { setDjenSyncMsg(`❌ Erro: ${e?.message ?? e}`); }
     setDjenSyncing(false);
-  }, [djenSyncing, cases, features.djenAutoSync, users]);
+  }, [djenSyncing, cases, features.djenAutoSync, users, currentUser, addNotification]);
 
   // ── Onboarding: registrar novo escritório ─────────────────────────────────
 

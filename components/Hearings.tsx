@@ -194,6 +194,15 @@ const Hearings: React.FC<HearingsProps> = ({
     const now = new Date().toISOString();
 
     if (editingId) {
+      // Notifica novo responsável se foi alterado
+      const prev = hearings.find(h => h.id === editingId);
+      if (prev && form.responsibleId && form.responsibleId !== prev.responsibleId && form.responsibleId !== currentUser.id) {
+        addNotification(
+          `⚖️ Audiência atribuída: ${form.processNumber || 'Processo não informado'}`,
+          `Você foi designado(a) responsável pela audiência do dia ${fmtDateTime(form.date ?? '', form.time ?? '')}.`,
+          form.responsibleId
+        );
+      }
       setHearings(prev => prev.map(h => h.id === editingId ? { ...h, ...form } as Hearing : h));
     } else {
       const newHearing: Hearing = {
