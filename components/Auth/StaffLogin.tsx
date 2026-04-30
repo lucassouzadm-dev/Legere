@@ -5,7 +5,7 @@ import { UserRole, Tenant } from '../../types';
 interface StaffLoginProps {
   onLogin: (email: string, password: string) => void;
   onSignUp: (name: string, email: string, role: UserRole, password: string, oabNumber?: string, oabState?: string) => void;
-  onClientLogin: (document: string) => void;
+  onClientLogin: (document: string, password: string) => void;
   onRegisterFirm: () => void;
   /** Quando presente, o usuário acessou via link de convite de um escritório */
   inviteTenant?: Tenant | null;
@@ -21,7 +21,8 @@ const StaffLogin: React.FC<StaffLoginProps> = ({ onLogin, onSignUp, onClientLogi
   const [role, setRole]             = useState<UserRole>(UserRole.LAWYER);
   const [oabNumber, setOabNumber]   = useState('');
   const [oabState, setOabState]     = useState('');
-  const [clientDoc, setClientDoc]   = useState('');
+  const [clientDoc, setClientDoc]       = useState('');
+  const [clientPass, setClientPass]     = useState('');
 
   const handleLogin = (e: React.FormEvent) => { e.preventDefault(); onLogin(email, password); };
   const handleSignUp = (e: React.FormEvent) => {
@@ -187,14 +188,20 @@ const StaffLogin: React.FC<StaffLoginProps> = ({ onLogin, onSignUp, onClientLogi
             <>
               <h3 className="text-2xl font-serif font-bold text-navy-800 dark:text-white mb-8">Acesso do Cliente</h3>
               <div className="space-y-4">
-                <p className="text-sm text-gray-500">Acesse o portal para acompanhar seu processo. Use seu CPF ou CNPJ cadastrado.</p>
+                <p className="text-sm text-gray-500">Acesse o portal para acompanhar seu processo. Use seu CPF ou CNPJ e a senha de convite fornecida pelo escritório.</p>
                 <div>
                   <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">CPF ou CNPJ (somente números)</label>
                   <input type="text" value={clientDoc} onChange={e => setClientDoc(e.target.value)}
                     placeholder="Somente números..."
                     className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm focus:ring-2 focus:ring-gold-800 outline-none dark:text-white font-mono" />
                 </div>
-                <button onClick={() => onClientLogin(clientDoc)}
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Senha de Convite</label>
+                  <input type="password" value={clientPass} onChange={e => setClientPass(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm focus:ring-2 focus:ring-gold-800 outline-none dark:text-white" />
+                </div>
+                <button onClick={() => onClientLogin(clientDoc, clientPass)}
                   className="w-full bg-navy-800 text-white font-bold py-4 rounded-xl shadow-xl hover:bg-gold-800 transition-all uppercase text-sm tracking-widest">
                   Acessar Portal
                 </button>

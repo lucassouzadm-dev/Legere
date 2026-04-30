@@ -593,10 +593,13 @@ const App: React.FC = () => {
     setSignUpSuccess(true);
   }, []);
 
-  const handleClientLogin = useCallback((doc: string) => {
-    const client = clients.find((c: any) => c.document.replace(/\D/g, '') === doc.replace(/\D/g, ''));
+  const handleClientLogin = useCallback((doc: string, pass: string) => {
+    const client = clients.find((c: any) =>
+      c.document.replace(/\D/g, '') === doc.replace(/\D/g, '') &&
+      c.password === pass
+    );
     if (client) { setCurrentUser(client); setAuthState('CLIENT'); }
-    else alert('Documento não localizado. Verifique com o escritório.');
+    else alert('Documento ou senha incorretos. Verifique com o escritório.');
   }, [clients]);
 
   const handleLogout = useCallback(async () => {
