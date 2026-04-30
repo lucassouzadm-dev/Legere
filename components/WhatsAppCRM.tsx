@@ -3,7 +3,7 @@ import {
   MessageCircle, Instagram, Users, TrendingUp, Settings,
   Send, Search, Phone, Mail, Tag, Clock, CheckCheck,
   ChevronRight, Circle, AlertCircle, Star, MoreVertical,
-  RefreshCw, Wifi, WifiOff, Filter, Plus, Bot,
+  RefreshCw, Wifi, WifiOff, Filter, Plus, Bot, UserCheck, XCircle, PhoneOff,
 } from 'lucide-react';
 import {
   ContatoCRM, LeadCRM, MensagemCRM, EtapaConversa, StatusConversa, EtapaPipeline,
@@ -88,65 +88,179 @@ const Inbox: React.FC<InboxProps> = ({
 
   const mensagens = selecionado ? (mensagensPorContato[selecionado.id] ?? []) : [];
 
+  // Humano em controle quando contato foi transferido ou está em atendimento humano
+  const isHumanMode = selecionado != null && (
+    selecionado.status === StatusConversa.TRANSFERIDA ||
+    selecionado.etapa === EtapaConversa.ATENDIMENTO_HUMANO
+  );
+  const isEncerrado = selecionado?.status === StatusConversa.ENCERRADA;
+
   useEffect(() => {
     msgEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [mensagens.length, selecionado]);
+
+  // Sincroniza o contato selecionado quando o array externo muda (ex: após assumir/encerrar)
+  useEffect(() => {
+    if (selecionado) {
+      const atualizado = contatos.find(c => c.id === selecionado.id);
+      if (atualizado) setSelecionado(atualizado);
+    }
+  }, [contatos]);
 
   const contatosFiltrados = contatos.filter(c =>
     c.nome.toLowerCase().includes(busca.toLowerCase()) ||
     c.telefone.includes(busca)
   );
 
-  async function enviarMensagem() {
-    if (!input.trim() || !selecionado || enviando) return;
-    setEnviando(true);
+  function assumirAtendimento() {
+    if (!selecionado) return;
+    const atualizado: ContatoCRM = {
+      ...selecionado,
+      etapa: EtapaConversa.ATENDIMENTO_HUMANO,
+      status: StatusConversa.TRANSFERIDA,
+    };
+    onContatoAtualizado(atualizado);
+    setSelecionado(atualizado);
+    // Mensagem de sistema informando a transferência
+    const msgSistema: MensagemCRM = {
+      id: `sys-${Date.now()}`,
+      contatoId: selecionado.id,
+      canal: selecionado.canal,
+      direcao: 'saida',
+      conteudo: '— Atendimento assumido por um agente humano —',
+      timestamp: new Date(),
+      lida: true,
+      tenantId,
+      origemBot: false,
+      remetenteNome: 'Sistema',
+    };
+    onMensagemEnviada(selecionado.id, msgSistema);
+  }
 
+  function encerrarAtendimento() {
+    if (!selecionado) return;
+    const atualizado: ContatoCRM = {
+      ...selecionado,
+      etapa: EtapaConversa.ENCERRAMENTO,
+      status: StatusConversa.ENCERRADA,
+    };
+    onContatoAtualizado(atualizado);
+    setSelecionado(atualizado);
+    const msgSistema: MensagemCRM = {
+      id: `sys-${Date.now()}`,
+      contatoId: selecionado.id,
+      canal: selecionado.canal,
+      direcao: 'saida',
+      conteudo: '— Atendimento encerrado —',
+      timestamp: new Date(),
+      lida: true,
+      tenantId,
+      origemBot: false,
+      remetenteNome: 'Sistema',
+    };
+    onMensagemEnviada(selecionado.id, msgSistema);
+  }
+
+  async function enviarMensagem() {
+    if (!input.trim() || !selecionado || enviando || isEncerrado) return;
+    setEnviando(true);
+    const texto = input.trim();
+    setInput('');
+
+    if (isHumanMode) {
+      // Atendente humano envia mensagem diretamente ao cliente (saída)
+      const msgAgente: MensagemCRM = {
+        id: `msg-${Date.now()}`,
+        contatoId: selecionado.id,
+        canal: selecionado.canal,
+        direcao: 'saida',
+        conteudo: texto,
+        timestamp: new Date(),
+        lida: true,
+        tenantId,
+        origemBot: false,
+        remetenteNome: 'Atendente',
+      };
+      onMensagemEnviada(selecionado.id, msgAgente);
+      onContatoAtualizado({ ...selecionado, ultimaMensagem: new Date() });
+      setEnviando(false);
+      return;
+    }
+
+    // Modo bot: simula mensagem do cliente → bot responde
     const msgUsuario: MensagemCRM = {
       id: `msg-${Date.now()}`,
       contatoId: selecionado.id,
       canal: selecionado.canal,
       direcao: 'entrada',
-      conteudo: input.trim(),
+      conteudo: texto,
       timestamp: new Date(),
       lida: true,
       tenantId,
+      remetenteNome: selecionado.nome,
     };
     onMensagemEnviada(selecionado.id, msgUsuario);
-    setInput('');
 
     try {
-      const richPrompt = buildRichSystemPrompt(knowledge);
+      const basePrompt = buildRichSystemPrompt(knowledge);
+      // Injeta instrução específica do contato no topo do system prompt
+      const richPrompt = selecionado.instrucaoBot?.trim()
+        ? `OBJETIVO DESTA CONVERSA (instrução do escritório para este contato):\n${selecionado.instrucaoBot.trim()}\n\n---\n\n${basePrompt}`
+        : basePrompt;
       const resultado = await processarMensagem(
         selecionado.id, msgUsuario.conteudo, tenantId, config,
         geminiApiKey, richPrompt
       );
-      const resposta: MensagemCRM = {
-        id: `msg-${Date.now() + 1}`,
-        contatoId: selecionado.id,
-        canal: selecionado.canal,
-        direcao: 'saida',
-        conteudo: resultado.resposta,
-        timestamp: new Date(),
-        lida: true,
-        tenantId,
-      };
-      onMensagemEnviada(selecionado.id, resposta);
-      onContatoAtualizado({
+      // Bot não deve responder se o contato foi transferido durante o processamento
+      if (resultado.resposta) {
+        const resposta: MensagemCRM = {
+          id: `msg-${Date.now() + 1}`,
+          contatoId: selecionado.id,
+          canal: selecionado.canal,
+          direcao: 'saida',
+          conteudo: resultado.resposta,
+          timestamp: new Date(),
+          lida: true,
+          tenantId,
+          origemBot: true,
+          remetenteNome: 'Bot',
+        };
+        onMensagemEnviada(selecionado.id, resposta);
+      }
+      const novoStatus = resultado.transferirParaHumano ? StatusConversa.TRANSFERIDA : selecionado.status;
+      const novaEtapa  = resultado.transferirParaHumano ? EtapaConversa.ATENDIMENTO_HUMANO : resultado.novaEtapa;
+      const atualizado: ContatoCRM = {
         ...selecionado,
-        etapa: resultado.novaEtapa,
+        etapa: novaEtapa,
         score: resultado.scoreAtualizado,
         ultimaMensagem: new Date(),
-        status: resultado.transferirParaHumano
-          ? StatusConversa.TRANSFERIDA
-          : selecionado.status,
-      });
+        status: novoStatus,
+      };
+      onContatoAtualizado(atualizado);
+      setSelecionado(atualizado);
+      // Se bot transferiu automaticamente, notificar no chat
+      if (resultado.transferirParaHumano) {
+        const msgSis: MensagemCRM = {
+          id: `sys-${Date.now() + 2}`,
+          contatoId: selecionado.id,
+          canal: selecionado.canal,
+          direcao: 'saida',
+          conteudo: '— Bot transferiu para atendimento humano —',
+          timestamp: new Date(),
+          lida: true,
+          tenantId,
+          origemBot: false,
+          remetenteNome: 'Sistema',
+        };
+        onMensagemEnviada(selecionado.id, msgSis);
+      }
     } finally {
       setEnviando(false);
     }
   }
 
   return (
-    <div style={{ display: 'flex', height: '600px', gap: 0, border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden' }}>
+    <div style={{ display: 'flex', height: '620px', gap: 0, border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden' }}>
       {/* Lista de conversas */}
       <div style={{ width: 300, borderRight: '1px solid #e5e7eb', display: 'flex', flexDirection: 'column', background: '#f9fafb' }}>
         <div style={{ padding: '12px 16px', borderBottom: '1px solid #e5e7eb' }}>
@@ -165,6 +279,7 @@ const Inbox: React.FC<InboxProps> = ({
           {contatosFiltrados.map(c => {
             const badge = statusBadge(c.status);
             const ativo = selecionado?.id === c.id;
+            const humanAtivo = c.status === StatusConversa.TRANSFERIDA || c.etapa === EtapaConversa.ATENDIMENTO_HUMANO;
             return (
               <div
                 key={c.id}
@@ -174,7 +289,7 @@ const Inbox: React.FC<InboxProps> = ({
                   cursor: 'pointer',
                   borderBottom: '1px solid #f3f4f6',
                   background: ativo ? '#eff6ff' : 'white',
-                  borderLeft: ativo ? '3px solid #3b82f6' : '3px solid transparent',
+                  borderLeft: ativo ? '3px solid #3b82f6' : humanAtivo ? '3px solid #8b5cf6' : '3px solid transparent',
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
@@ -184,6 +299,7 @@ const Inbox: React.FC<InboxProps> = ({
                       : <Instagram size={13} style={{ color: '#e1306c' }} />
                     }
                     <span style={{ fontWeight: 600, fontSize: 13, color: '#111827' }}>{c.nome}</span>
+                    {humanAtivo && <UserCheck size={11} style={{ color: '#8b5cf6' }} />}
                   </div>
                   {c.ultimaMensagem && (
                     <span style={{ fontSize: 11, color: '#9ca3af' }}>{timeAgo(c.ultimaMensagem)}</span>
@@ -209,78 +325,156 @@ const Inbox: React.FC<InboxProps> = ({
       {selecionado ? (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'white' }}>
           {/* Header do chat */}
-          <div style={{ padding: '12px 20px', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontWeight: 700, fontSize: 15, color: '#111827' }}>{selecionado.nome}</span>
-                <span style={{
-                  fontSize: 10, padding: '2px 8px', borderRadius: 10,
-                  background: statusBadge(selecionado.status).color + '20',
-                  color: statusBadge(selecionado.status).color, fontWeight: 600
-                }}>{statusBadge(selecionado.status).label}</span>
+          <div style={{ padding: '10px 16px', borderBottom: '1px solid #e5e7eb', background: isHumanMode ? '#faf5ff' : 'white' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontWeight: 700, fontSize: 15, color: '#111827' }}>{selecionado.nome}</span>
+                  <span style={{
+                    fontSize: 10, padding: '2px 8px', borderRadius: 10,
+                    background: statusBadge(selecionado.status).color + '20',
+                    color: statusBadge(selecionado.status).color, fontWeight: 600
+                  }}>{statusBadge(selecionado.status).label}</span>
+                  {isHumanMode && (
+                    <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: '#f3e8ff', color: '#7c3aed', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 3 }}>
+                      <UserCheck size={10} /> Atendimento humano
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+                  {selecionado.telefone} · Score: <strong style={{ color: scoreColor(selecionado.score) }}>{selecionado.score}/100</strong>
+                </div>
               </div>
-              <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
-                {selecionado.telefone} · Score: <strong style={{ color: scoreColor(selecionado.score) }}>{selecionado.score}/100</strong>
+              {/* Botões de controle */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                {!isHumanMode && !isEncerrado && geminiApiKey && (
+                  <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 10, background: '#f0fdf4', color: '#16a34a', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <Bot size={12} /> Bot ativo
+                  </span>
+                )}
+                {!isHumanMode && !isEncerrado && selecionado.instrucaoBot && (
+                  <span
+                    title={selecionado.instrucaoBot}
+                    style={{ fontSize: 11, padding: '3px 8px', borderRadius: 10, background: '#f0fdf4', color: '#15803d', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, cursor: 'help' }}
+                  >
+                    <Bot size={12} /> Instrução ativa
+                  </span>
+                )}
+                {!isHumanMode && !isEncerrado && (
+                  <button
+                    onClick={assumirAtendimento}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 5,
+                      padding: '5px 12px', borderRadius: 8, border: '1px solid #8b5cf6',
+                      background: 'white', color: '#7c3aed', fontWeight: 600, fontSize: 12, cursor: 'pointer',
+                    }}
+                  >
+                    <UserCheck size={13} /> Assumir Atendimento
+                  </button>
+                )}
+                {isHumanMode && !isEncerrado && (
+                  <button
+                    onClick={encerrarAtendimento}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 5,
+                      padding: '5px 12px', borderRadius: 8, border: '1px solid #ef4444',
+                      background: 'white', color: '#dc2626', fontWeight: 600, fontSize: 12, cursor: 'pointer',
+                    }}
+                  >
+                    <PhoneOff size={13} /> Encerrar Atendimento
+                  </button>
+                )}
+                {isEncerrado && (
+                  <span style={{ fontSize: 12, color: '#6b7280', fontStyle: 'italic' }}>Atendimento encerrado</span>
+                )}
+                {selecionado.tags.map(t => (
+                  <span key={t} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 10, background: '#eff6ff', color: '#3b82f6', fontWeight: 600 }}>{t}</span>
+                ))}
               </div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {geminiApiKey && (
-                <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 10, background: '#f0fdf4', color: '#16a34a', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <Bot size={12} /> IA ativa
-                </span>
-              )}
-              {selecionado.tags.map(t => (
-                <span key={t} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 10, background: '#eff6ff', color: '#3b82f6', fontWeight: 600 }}>{t}</span>
-              ))}
             </div>
           </div>
 
           {/* Mensagens */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', background: '#f9fafb', display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {mensagens.map(m => (
-              <div key={m.id} style={{ display: 'flex', justifyContent: m.direcao === 'entrada' ? 'flex-start' : 'flex-end' }}>
-                <div style={{
-                  maxWidth: '70%', padding: '8px 12px', borderRadius: m.direcao === 'entrada' ? '0 12px 12px 12px' : '12px 0 12px 12px',
-                  background: m.direcao === 'entrada' ? 'white' : '#3b82f6',
-                  color: m.direcao === 'entrada' ? '#111827' : 'white',
-                  fontSize: 13, boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
-                }}>
-                  <p style={{ margin: 0, lineHeight: 1.5 }}>{m.conteudo}</p>
-                  <div style={{ fontSize: 11, marginTop: 4, textAlign: 'right', opacity: 0.7 }}>
-                    {m.timestamp.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                    {m.direcao === 'saida' && <CheckCheck size={11} style={{ marginLeft: 4, display: 'inline' }} />}
+            {mensagens.map(m => {
+              const isSystem = m.remetenteNome === 'Sistema';
+              if (isSystem) {
+                return (
+                  <div key={m.id} style={{ display: 'flex', justifyContent: 'center' }}>
+                    <span style={{ fontSize: 11, color: '#9ca3af', background: '#f3f4f6', padding: '3px 12px', borderRadius: 10, fontStyle: 'italic' }}>
+                      {m.conteudo}
+                    </span>
+                  </div>
+                );
+              }
+              const isEntrada = m.direcao === 'entrada';
+              const bubbleBg = isEntrada ? 'white'
+                : m.origemBot ? '#3b82f6'
+                : '#7c3aed'; // humano = roxo
+              const senderLabel = isEntrada
+                ? (m.remetenteNome ?? selecionado.nome)
+                : m.origemBot ? 'Bot 🤖' : (m.remetenteNome ?? 'Atendente 👤');
+              return (
+                <div key={m.id} style={{ display: 'flex', flexDirection: 'column', alignItems: isEntrada ? 'flex-start' : 'flex-end', gap: 2 }}>
+                  <span style={{ fontSize: 10, color: '#9ca3af', paddingLeft: isEntrada ? 4 : 0, paddingRight: isEntrada ? 0 : 4 }}>
+                    {senderLabel}
+                  </span>
+                  <div style={{
+                    maxWidth: '70%', padding: '8px 12px',
+                    borderRadius: isEntrada ? '0 12px 12px 12px' : '12px 0 12px 12px',
+                    background: bubbleBg,
+                    color: isEntrada ? '#111827' : 'white',
+                    fontSize: 13, boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
+                  }}>
+                    <p style={{ margin: 0, lineHeight: 1.5 }}>{m.conteudo}</p>
+                    <div style={{ fontSize: 11, marginTop: 4, textAlign: 'right', opacity: 0.7 }}>
+                      {m.timestamp.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                      {!isEntrada && <CheckCheck size={11} style={{ marginLeft: 4, display: 'inline' }} />}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
             <div ref={msgEndRef} />
           </div>
 
           {/* Input */}
-          <div style={{ padding: '12px 16px', borderTop: '1px solid #e5e7eb', display: 'flex', gap: 10, alignItems: 'flex-end' }}>
-            <textarea
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviarMensagem(); } }}
-              placeholder="Digite uma mensagem (Enter para enviar)..."
-              rows={2}
-              style={{ flex: 1, padding: '10px 14px', fontSize: 13, border: '1px solid #e5e7eb', borderRadius: 10, resize: 'none', fontFamily: 'inherit', lineHeight: 1.5 }}
-            />
-            <button
-              onClick={enviarMensagem}
-              disabled={!input.trim() || enviando}
-              style={{
-                width: 42, height: 42, borderRadius: '50%', border: 'none',
-                background: input.trim() ? '#3b82f6' : '#e5e7eb', cursor: input.trim() ? 'pointer' : 'default',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-              }}
-            >
-              {enviando
-                ? <RefreshCw size={16} style={{ color: 'white', animation: 'spin 1s linear infinite' }} />
-                : <Send size={16} style={{ color: input.trim() ? 'white' : '#9ca3af' }} />
-              }
-            </button>
-          </div>
+          {isEncerrado ? (
+            <div style={{ padding: '14px 16px', borderTop: '1px solid #e5e7eb', background: '#f9fafb', textAlign: 'center', fontSize: 13, color: '#9ca3af', fontStyle: 'italic' }}>
+              Esta conversa foi encerrada
+            </div>
+          ) : (
+            <div style={{ padding: '12px 16px', borderTop: `1px solid ${isHumanMode ? '#ddd6fe' : '#e5e7eb'}`, display: 'flex', gap: 10, alignItems: 'flex-end', background: isHumanMode ? '#faf5ff' : 'white' }}>
+              {isHumanMode && (
+                <span style={{ fontSize: 11, color: '#7c3aed', alignSelf: 'center', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <UserCheck size={12} /> Você
+                </span>
+              )}
+              <textarea
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviarMensagem(); } }}
+                placeholder={isHumanMode ? 'Responder como atendente (Enter para enviar)...' : 'Simular mensagem do cliente (Enter para enviar)...'}
+                rows={2}
+                style={{ flex: 1, padding: '10px 14px', fontSize: 13, border: `1px solid ${isHumanMode ? '#c4b5fd' : '#e5e7eb'}`, borderRadius: 10, resize: 'none', fontFamily: 'inherit', lineHeight: 1.5 }}
+              />
+              <button
+                onClick={enviarMensagem}
+                disabled={!input.trim() || enviando}
+                style={{
+                  width: 42, height: 42, borderRadius: '50%', border: 'none',
+                  background: input.trim() ? (isHumanMode ? '#7c3aed' : '#3b82f6') : '#e5e7eb',
+                  cursor: input.trim() ? 'pointer' : 'default',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                }}
+              >
+                {enviando
+                  ? <RefreshCw size={16} style={{ color: 'white', animation: 'spin 1s linear infinite' }} />
+                  : <Send size={16} style={{ color: input.trim() ? 'white' : '#9ca3af' }} />
+                }
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', flexDirection: 'column', gap: 8 }}>
@@ -376,67 +570,194 @@ const Pipeline: React.FC<PipelineProps> = ({ leads, onLeadMovido }) => {
 
 // ─── Aba: Contatos ────────────────────────────────────────────────────────────
 
-const Contatos: React.FC<{ contatos: ContatoCRM[] }> = ({ contatos }) => {
+interface ContatosProps {
+  contatos: ContatoCRM[];
+  onContatoAtualizado: (c: ContatoCRM) => void;
+}
+
+const Contatos: React.FC<ContatosProps> = ({ contatos, onContatoAtualizado }) => {
   const [busca, setBusca] = useState('');
+  const [selecionado, setSelecionado] = useState<ContatoCRM | null>(null);
+  const [instrucao, setInstrucao] = useState('');
+  const [obs, setObs] = useState('');
+  const [salvo, setSalvo] = useState(false);
+
   const filtrados = contatos.filter(c =>
     c.nome.toLowerCase().includes(busca.toLowerCase()) || c.telefone.includes(busca)
   );
 
+  function abrirDetalhe(c: ContatoCRM) {
+    setSelecionado(c);
+    setInstrucao(c.instrucaoBot ?? '');
+    setObs(c.observacoes ?? '');
+    setSalvo(false);
+  }
+
+  function salvarDetalhe() {
+    if (!selecionado) return;
+    onContatoAtualizado({ ...selecionado, instrucaoBot: instrucao.trim() || undefined, observacoes: obs });
+    setSelecionado(prev => prev ? { ...prev, instrucaoBot: instrucao.trim() || undefined, observacoes: obs } : prev);
+    setSalvo(true);
+    setTimeout(() => setSalvo(false), 2000);
+  }
+
   return (
-    <div>
-      <div style={{ marginBottom: 16, position: 'relative', maxWidth: 360 }}>
-        <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
-        <input
-          value={busca}
-          onChange={e => setBusca(e.target.value)}
-          placeholder="Buscar contato..."
-          style={{ width: '100%', padding: '8px 12px 8px 34px', fontSize: 13, border: '1px solid #e5e7eb', borderRadius: 8, boxSizing: 'border-box' }}
-        />
-      </div>
+    <div style={{ display: 'flex', gap: 16, minHeight: 500 }}>
+      {/* Lista */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ marginBottom: 12, position: 'relative', maxWidth: 360 }}>
+          <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
+          <input
+            value={busca}
+            onChange={e => setBusca(e.target.value)}
+            placeholder="Buscar contato..."
+            style={{ width: '100%', padding: '8px 12px 8px 34px', fontSize: 13, border: '1px solid #e5e7eb', borderRadius: 8, boxSizing: 'border-box' }}
+          />
+        </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {filtrados.map(c => {
-          const badge = statusBadge(c.status);
-          return (
-            <div key={c.id} style={{ background: 'white', padding: '14px 18px', borderRadius: 10, border: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 16 }}>
-              <div style={{
-                width: 44, height: 44, borderRadius: '50%', background: '#eff6ff',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 700, color: '#3b82f6', flexShrink: 0,
-              }}>
-                {c.nome.charAt(0).toUpperCase()}
-              </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {filtrados.map(c => {
+            const badge = statusBadge(c.status);
+            const ativo = selecionado?.id === c.id;
+            return (
+              <div
+                key={c.id}
+                onClick={() => abrirDetalhe(c)}
+                style={{
+                  background: ativo ? '#eff6ff' : 'white', padding: '14px 18px', borderRadius: 10,
+                  border: `1px solid ${ativo ? '#93c5fd' : '#e5e7eb'}`, display: 'flex', alignItems: 'center', gap: 16,
+                  cursor: 'pointer', transition: 'all 0.15s',
+                }}
+              >
+                <div style={{
+                  width: 44, height: 44, borderRadius: '50%', background: '#eff6ff',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 700, color: '#3b82f6', flexShrink: 0,
+                }}>
+                  {c.nome.charAt(0).toUpperCase()}
+                </div>
 
-              <div style={{ flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontWeight: 700, fontSize: 14, color: '#111827' }}>{c.nome}</span>
-                  <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 10, background: badge.color + '20', color: badge.color, fontWeight: 600 }}>{badge.label}</span>
-                  {c.canal === 'whatsapp'
-                    ? <MessageCircle size={13} style={{ color: '#25d366' }} />
-                    : <Instagram size={13} style={{ color: '#e1306c' }} />
-                  }
-                </div>
-                <div style={{ fontSize: 12, color: '#6b7280', marginTop: 3, display: 'flex', gap: 16 }}>
-                  <span>📞 {c.telefone}</span>
-                  <span>Etapa: {etapaLabel(c.etapa)}</span>
-                  {c.ultimaMensagem && <span>⏱ {timeAgo(c.ultimaMensagem)}</span>}
-                </div>
-                {c.tags.length > 0 && (
-                  <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
-                    {c.tags.map(t => (
-                      <span key={t} style={{ fontSize: 10, padding: '2px 6px', borderRadius: 6, background: '#f3f4f6', color: '#374151' }}>{t}</span>
-                    ))}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontWeight: 700, fontSize: 14, color: '#111827' }}>{c.nome}</span>
+                    <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 10, background: badge.color + '20', color: badge.color, fontWeight: 600 }}>{badge.label}</span>
+                    {c.canal === 'whatsapp'
+                      ? <MessageCircle size={13} style={{ color: '#25d366' }} />
+                      : <Instagram size={13} style={{ color: '#e1306c' }} />
+                    }
+                    {c.instrucaoBot && (
+                      <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, background: '#f0fdf4', color: '#16a34a', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 3 }}>
+                        <Bot size={10} /> Bot instruído
+                      </span>
+                    )}
                   </div>
-                )}
-              </div>
+                  <div style={{ fontSize: 12, color: '#6b7280', marginTop: 3, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                    <span>📞 {c.telefone}</span>
+                    <span>Etapa: {etapaLabel(c.etapa)}</span>
+                    {c.ultimaMensagem && <span>⏱ {timeAgo(c.ultimaMensagem)}</span>}
+                  </div>
+                  {c.tags.length > 0 && (
+                    <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
+                      {c.tags.map(t => (
+                        <span key={t} style={{ fontSize: 10, padding: '2px 6px', borderRadius: 6, background: '#f3f4f6', color: '#374151' }}>{t}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
 
-              <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                <div style={{ fontSize: 22, fontWeight: 800, color: scoreColor(c.score) }}>{c.score}</div>
-                <div style={{ fontSize: 11, color: '#9ca3af' }}>Score</div>
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: scoreColor(c.score) }}>{c.score}</div>
+                  <div style={{ fontSize: 11, color: '#9ca3af' }}>Score</div>
+                </div>
               </div>
+            );
+          })}
+          {filtrados.length === 0 && (
+            <div style={{ textAlign: 'center', padding: '40px 0', color: '#9ca3af', fontSize: 14 }}>
+              Nenhum contato encontrado
             </div>
-          );
-        })}
+          )}
+        </div>
       </div>
+
+      {/* Painel de detalhe */}
+      {selecionado && (
+        <div style={{ width: 340, flexShrink: 0, border: '1px solid #e5e7eb', borderRadius: 12, background: 'white', padding: 20, display: 'flex', flexDirection: 'column', gap: 16, alignSelf: 'flex-start' }}>
+          {/* Cabeçalho */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 800, color: '#3b82f6', flexShrink: 0 }}>
+              {selecionado.nome.charAt(0).toUpperCase()}
+            </div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 15, color: '#111827' }}>{selecionado.nome}</div>
+              <div style={{ fontSize: 12, color: '#6b7280' }}>{selecionado.telefone}</div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 10, background: statusBadge(selecionado.status).color + '20', color: statusBadge(selecionado.status).color, fontWeight: 600 }}>
+              {statusBadge(selecionado.status).label}
+            </span>
+            <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 10, background: '#f3f4f6', color: '#374151', fontWeight: 600 }}>
+              {etapaLabel(selecionado.etapa)}
+            </span>
+            <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 10, background: '#fdf4ff', color: '#9333ea', fontWeight: 700 }}>
+              Score {selecionado.score}
+            </span>
+          </div>
+
+          <hr style={{ border: 'none', borderTop: '1px solid #f3f4f6', margin: 0 }} />
+
+          {/* Instruções do Bot */}
+          <div>
+            <label style={{ fontSize: 13, fontWeight: 700, color: '#111827', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+              <Bot size={14} style={{ color: '#3b82f6' }} /> Instruções para o Bot
+            </label>
+            <p style={{ margin: '0 0 8px 0', fontSize: 12, color: '#6b7280', lineHeight: 1.5 }}>
+              Defina o objetivo da conversa para este contato. O assistente virtual usará essas instruções ao interagir.
+            </p>
+            <textarea
+              value={instrucao}
+              onChange={e => setInstrucao(e.target.value)}
+              rows={4}
+              placeholder="Ex: Este contato demonstrou interesse em ação trabalhista. Focar em coletar informações sobre o vínculo empregatício e agendar consulta urgente com Dr. Paulo."
+              style={{
+                width: '100%', padding: '9px 12px', fontSize: 12, border: '1px solid #e5e7eb',
+                borderRadius: 8, boxSizing: 'border-box', resize: 'vertical', fontFamily: 'inherit',
+                lineHeight: 1.5, color: '#111827',
+              }}
+            />
+          </div>
+
+          {/* Observações */}
+          <div>
+            <label style={{ fontSize: 13, fontWeight: 700, color: '#111827', display: 'block', marginBottom: 6 }}>
+              Observações
+            </label>
+            <textarea
+              value={obs}
+              onChange={e => setObs(e.target.value)}
+              rows={3}
+              placeholder="Notas internas sobre este contato..."
+              style={{
+                width: '100%', padding: '9px 12px', fontSize: 12, border: '1px solid #e5e7eb',
+                borderRadius: 8, boxSizing: 'border-box', resize: 'vertical', fontFamily: 'inherit',
+                lineHeight: 1.5, color: '#111827',
+              }}
+            />
+          </div>
+
+          <button
+            onClick={salvarDetalhe}
+            style={{
+              padding: '10px 0', borderRadius: 8, border: 'none',
+              background: salvo ? '#22c55e' : '#3b82f6', color: 'white',
+              fontWeight: 700, fontSize: 14, cursor: 'pointer', transition: 'background 0.2s',
+            }}
+          >
+            {salvo ? '✓ Salvo!' : 'Salvar Alterações'}
+          </button>
+        </div>
+      )}
     </div>
   );
 };
@@ -685,7 +1006,10 @@ const WhatsAppCRM: React.FC = () => {
         <Pipeline leads={leads} onLeadMovido={moverLead} />
       )}
       {aba === 'contatos' && (
-        <Contatos contatos={contatos} />
+        <Contatos
+          contatos={contatos}
+          onContatoAtualizado={c => setContatos(prev => prev.map(x => x.id === c.id ? c : x))}
+        />
       )}
       {aba === 'assistente' && (
         <CRMAssistantConfig

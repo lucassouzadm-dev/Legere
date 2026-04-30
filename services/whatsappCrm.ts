@@ -39,6 +39,8 @@ export interface MensagemCRM {
   timestamp: Date;
   lida: boolean;
   tenantId: string;
+  origemBot?: boolean;      // true = resposta automática do bot
+  remetenteNome?: string;   // nome de quem enviou (atendente humano ou nome do contato)
 }
 
 export interface ContatoCRM {
@@ -53,6 +55,7 @@ export interface ContatoCRM {
   score: number;             // 0–100 de qualificação
   tags: string[];
   observacoes: string;
+  instrucaoBot?: string;    // objetivo/instrução específica para o bot neste contato
   ultimaMensagem?: Date;
   criadoEm: Date;
   tenantId: string;
@@ -317,6 +320,13 @@ export async function processarMensagem(
       const enc = config.mensagemEncerramento
         ?? `Obrigado pelo contato! Nosso escritório responderá em breve. 😊`;
       resposta = enc;
+      break;
+    }
+
+    case EtapaConversa.ATENDIMENTO_HUMANO: {
+      // Conversa em atendimento humano — bot não deve interferir
+      resposta = '';
+      transferirParaHumano = false;
       break;
     }
 
