@@ -72,13 +72,16 @@ interface InboxProps {
   tenantId: string;
   knowledge: CRMKnowledgeBase;
   geminiApiKey?: string;
+  autoIniciarContatoId?: string | null;
   onContatoAtualizado: (c: ContatoCRM) => void;
   onMensagemEnviada: (contatoId: string, msg: MensagemCRM) => void;
+  onExcluirConversa: (contatoId: string) => void;
+  onAutoIniciado: () => void;
 }
 
 const Inbox: React.FC<InboxProps> = ({
   contatos, mensagensPorContato, config, tenantId, knowledge, geminiApiKey,
-  onContatoAtualizado, onMensagemEnviada,
+  autoIniciarContatoId, onContatoAtualizado, onMensagemEnviada, onExcluirConversa, onAutoIniciado,
 }) => {
   const [selecionado, setSelecionado] = useState<ContatoCRM | null>(contatos[0] ?? null);
   const [input, setInput] = useState('');
@@ -106,6 +109,41 @@ const Inbox: React.FC<InboxProps> = ({
       if (atualizado) setSelecionado(atualizado);
     }
   }, [contatos]);
+
+  // Auto-inicia conversa quando vindo da aba Contatos → "Iniciar Conversa com Bot"
+  useEffect(() => {
+    if (!autoIniciarContatoId) return;
+    const alvo = contatos.find(c => c.id === autoIniciarContatoId);
+    if (!alvo) return;
+    setSelecionado(alvo);
+    onAutoIniciado();
+    // Dispara saudação do bot automaticamente se a conversa ainda não tem mensagens
+    const jaTemMensagens = (mensagensPorContato[alvo.id] ?? []).length > 0;
+    if (jaTemMensagens) return;
+    setEnviando(true);
+    (async () => {
+      try {
+        const basePrompt = buildRichSystemPrompt(knowledge);
+        const richPrompt = alvo.instrucaoBot?.trim()
+          ? `OBJETIVO DESTA CONVERSA (instrução do escritório para este contato):\n${alvo.instrucaoBot.trim()}\n\n---\n\n${basePrompt}`
+          : basePrompt;
+        const resultado = await processarMensagem(
+          alvo.id, '', tenantId, config, geminiApiKey, richPrompt
+        );
+        if (resultado.resposta) {
+          const msgBot: MensagemCRM = {
+            id: `msg-${Date.now()}`,
+            contatoId: alvo.id, canal: alvo.canal,
+            direcao: 'saida', conteudo: resultado.resposta,
+            timestamp: new Date(), lida: true, tenantId,
+            origemBot: true, remetenteNome: 'Bot',
+          };
+          onMensagemEnviada(alvo.id, msgBot);
+          onContatoAtualizado({ ...alvo, etapa: resultado.novaEtapa, ultimaMensagem: new Date() });
+        }
+      } finally { setEnviando(false); }
+    })();
+  }, [autoIniciarContatoId]);
 
   const contatosFiltrados = contatos.filter(c =>
     c.nome.toLowerCase().includes(busca.toLowerCase()) ||
@@ -390,6 +428,18 @@ const Inbox: React.FC<InboxProps> = ({
                 {selecionado.tags.map(t => (
                   <span key={t} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 10, background: '#eff6ff', color: '#3b82f6', fontWeight: 600 }}>{t}</span>
                 ))}
+                <button
+                  onClick={() => {
+                    if (window.confirm(`Excluir todas as mensagens da conversa com ${selecionado.nome}?`)) {
+                      onExcluirConversa(selecionado.id);
+                      setSelecionado(null);
+                    }
+                  }}
+                  title="Excluir conversa"
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', display: 'flex', alignItems: 'center', padding: 4 }}
+                >
+                  <XCircle size={16} />
+                </button>
               </div>
             </div>
           </div>
@@ -573,17 +623,44 @@ const Pipeline: React.FC<PipelineProps> = ({ leads, onLeadMovido }) => {
 const ETAPA_OPTIONS = Object.values(EtapaConversa);
 const STATUS_OPTIONS = Object.values(StatusConversa);
 const CANAL_OPTIONS: Canal[] = ['whatsapp', 'instagram'];
+const PIPELINE_OPTIONS = Object.values(EtapaPipeline);
+
+const PIPELINE_LABELS: Record<EtapaPipeline, string> = {
+  [EtapaPipeline.NOVO_LEAD]:        'Novo Lead',
+  [EtapaPipeline.CONTATO_FEITO]:    'Contato Feito',
+  [EtapaPipeline.REUNIAO_MARCADA]:  'Reunião Marcada',
+  [EtapaPipeline.PROPOSTA_ENVIADA]: 'Proposta Enviada',
+  [EtapaPipeline.CONTRATADO]:       'Contratado',
+  [EtapaPipeline.PERDIDO]:          'Perdido',
+};
 
 interface FormContato {
   nome: string; telefone: string; email: string;
   canal: Canal; etapa: EtapaConversa; status: StatusConversa;
-  score: number; tagsTexto: string; observacoes: string; instrucaoBot: string;
+  score: number; tagsTexto: string; observacoes: string;
+}
+
+interface FormPipeline {
+  etapaPipeline: EtapaPipeline;
+  areaJuridica: string;
+  urgencia: 'baixa' | 'media' | 'alta';
+  problemaRelatado: string;
+  advogadoResponsavel: string;
+  dataAgendamento: string;
+  observacoesLead: string;
 }
 
 const FORM_VAZIO: FormContato = {
   nome: '', telefone: '', email: '', canal: 'whatsapp',
   etapa: EtapaConversa.SAUDACAO, status: StatusConversa.ATIVA,
-  score: 0, tagsTexto: '', observacoes: '', instrucaoBot: '',
+  score: 0, tagsTexto: '', observacoes: '',
+};
+
+const PIPELINE_VAZIO: FormPipeline = {
+  etapaPipeline: EtapaPipeline.NOVO_LEAD,
+  areaJuridica: '', urgencia: 'baixa',
+  problemaRelatado: '', advogadoResponsavel: '',
+  dataAgendamento: '', observacoesLead: '',
 };
 
 function contatoParaForm(c: ContatoCRM): FormContato {
@@ -591,23 +668,47 @@ function contatoParaForm(c: ContatoCRM): FormContato {
     nome: c.nome, telefone: c.telefone, email: c.email ?? '',
     canal: c.canal, etapa: c.etapa, status: c.status,
     score: c.score, tagsTexto: c.tags.join(', '),
-    observacoes: c.observacoes ?? '', instrucaoBot: c.instrucaoBot ?? '',
+    observacoes: c.observacoes ?? '',
+  };
+}
+
+function leadParaPipeline(l: LeadCRM): FormPipeline {
+  return {
+    etapaPipeline: l.etapaPipeline,
+    areaJuridica: l.areaJuridica,
+    urgencia: l.urgencia,
+    problemaRelatado: l.problemaRelatado,
+    advogadoResponsavel: l.advogadoResponsavel ?? '',
+    dataAgendamento: l.dataAgendamento ? l.dataAgendamento.toISOString().split('T')[0] : '',
+    observacoesLead: l.observacoes ?? '',
   };
 }
 
 interface ContatosProps {
   contatos: ContatoCRM[];
+  leads: LeadCRM[];
   tenantId: string;
   onContatoAtualizado: (c: ContatoCRM) => void;
   onNovoContato: (c: ContatoCRM) => void;
+  onExcluirContato: (id: string) => void;
+  onLeadUpsert: (lead: LeadCRM) => void;
+  onIniciarConversa: (c: ContatoCRM) => void;
 }
 
-const Contatos: React.FC<ContatosProps> = ({ contatos, tenantId, onContatoAtualizado, onNovoContato }) => {
+const Contatos: React.FC<ContatosProps> = ({
+  contatos, leads, tenantId,
+  onContatoAtualizado, onNovoContato, onExcluirContato, onLeadUpsert, onIniciarConversa,
+}) => {
   const [busca, setBusca] = useState('');
   const [selecionado, setSelecionado] = useState<ContatoCRM | null>(null);
   const [modoNovo, setModoNovo] = useState(false);
+  const [abaPainel, setAbaPainel] = useState<'dados' | 'pipeline' | 'bot'>('dados');
   const [form, setForm] = useState<FormContato>(FORM_VAZIO);
+  const [formPipeline, setFormPipeline] = useState<FormPipeline>(PIPELINE_VAZIO);
+  const [instrucaoBot, setInstrucaoBot] = useState('');
   const [salvo, setSalvo] = useState(false);
+  const [salvoPipeline, setSalvoPipeline] = useState(false);
+  const [salvoBot, setSalvoBot] = useState(false);
   const [erro, setErro] = useState('');
 
   const filtrados = contatos.filter(c =>
@@ -616,77 +717,119 @@ const Contatos: React.FC<ContatosProps> = ({ contatos, tenantId, onContatoAtuali
     (c.email ?? '').toLowerCase().includes(busca.toLowerCase())
   );
 
+  function leadDoContato(contatoId: string): LeadCRM | undefined {
+    return leads.find(l => l.contatoId === contatoId);
+  }
+
   function abrirDetalhe(c: ContatoCRM) {
     setSelecionado(c);
     setModoNovo(false);
     setForm(contatoParaForm(c));
-    setSalvo(false);
+    setInstrucaoBot(c.instrucaoBot ?? '');
+    const lead = leadDoContato(c.id);
+    setFormPipeline(lead ? leadParaPipeline(lead) : PIPELINE_VAZIO);
+    setSalvo(false); setSalvoPipeline(false); setSalvoBot(false);
     setErro('');
   }
 
   function abrirNovo() {
     setSelecionado(null);
     setModoNovo(true);
+    setAbaPainel('dados');
     setForm(FORM_VAZIO);
-    setSalvo(false);
-    setErro('');
+    setInstrucaoBot('');
+    setFormPipeline(PIPELINE_VAZIO);
+    setSalvo(false); setErro('');
   }
 
-  function fecharPainel() {
-    setSelecionado(null);
-    setModoNovo(false);
-  }
+  function fecharPainel() { setSelecionado(null); setModoNovo(false); }
 
-  function campo(key: keyof FormContato, value: any) {
+  function campoForm(key: keyof FormContato, value: any) {
     setForm(f => ({ ...f, [key]: value }));
   }
+  function campoPipeline(key: keyof FormPipeline, value: any) {
+    setFormPipeline(f => ({ ...f, [key]: value }));
+  }
 
-  function salvar() {
+  // Retorna o contato atualizado com os dados do form atual (sem instrucaoBot)
+  function buildContatoAtualizado(base: ContatoCRM | null): ContatoCRM {
+    const tags = form.tagsTexto.split(',').map(t => t.trim()).filter(Boolean);
+    return {
+      id: base?.id ?? `c-${Date.now()}`,
+      nome: form.nome.trim(),
+      telefone: form.telefone.trim(),
+      email: form.email.trim() || undefined,
+      canal: form.canal,
+      etapa: form.etapa,
+      status: form.status,
+      score: form.score,
+      tags,
+      observacoes: form.observacoes,
+      instrucaoBot: base?.instrucaoBot,
+      criadoEm: base?.criadoEm ?? new Date(),
+      ultimaMensagem: base?.ultimaMensagem,
+      tenantId,
+    };
+  }
+
+  function salvarDados() {
     if (!form.nome.trim()) { setErro('Nome é obrigatório.'); return; }
     if (!form.telefone.trim()) { setErro('Telefone é obrigatório.'); return; }
     setErro('');
-    const tags = form.tagsTexto.split(',').map(t => t.trim()).filter(Boolean);
-
     if (modoNovo) {
-      const novo: ContatoCRM = {
-        id: `c-${Date.now()}`,
-        nome: form.nome.trim(),
-        telefone: form.telefone.trim(),
-        email: form.email.trim() || undefined,
-        canal: form.canal,
-        etapa: form.etapa,
-        status: form.status,
-        score: form.score,
-        tags,
-        observacoes: form.observacoes,
-        instrucaoBot: form.instrucaoBot.trim() || undefined,
-        criadoEm: new Date(),
-        tenantId,
-      };
+      const novo = buildContatoAtualizado(null);
       onNovoContato(novo);
       setSelecionado(novo);
       setModoNovo(false);
-      setSalvo(true);
-      setTimeout(() => setSalvo(false), 2000);
     } else if (selecionado) {
-      const atualizado: ContatoCRM = {
-        ...selecionado,
-        nome: form.nome.trim(),
-        telefone: form.telefone.trim(),
-        email: form.email.trim() || undefined,
-        canal: form.canal,
-        etapa: form.etapa,
-        status: form.status,
-        score: form.score,
-        tags,
-        observacoes: form.observacoes,
-        instrucaoBot: form.instrucaoBot.trim() || undefined,
-      };
+      const atualizado = buildContatoAtualizado(selecionado);
       onContatoAtualizado(atualizado);
       setSelecionado(atualizado);
-      setSalvo(true);
-      setTimeout(() => setSalvo(false), 2000);
     }
+    setSalvo(true);
+    setTimeout(() => setSalvo(false), 2000);
+  }
+
+  function salvarPipeline() {
+    if (!selecionado && !modoNovo) return;
+    const contato = selecionado ?? buildContatoAtualizado(null);
+    const leadExistente = selecionado ? leadDoContato(selecionado.id) : undefined;
+    const lead: LeadCRM = {
+      id: leadExistente?.id ?? `lead-${Date.now()}`,
+      contatoId: contato.id,
+      nomeContato: contato.nome,
+      telefone: contato.telefone,
+      problemaRelatado: formPipeline.problemaRelatado,
+      areaJuridica: formPipeline.areaJuridica,
+      urgencia: formPipeline.urgencia,
+      score: contato.score,
+      etapaPipeline: formPipeline.etapaPipeline,
+      advogadoResponsavel: formPipeline.advogadoResponsavel || undefined,
+      dataAgendamento: formPipeline.dataAgendamento ? new Date(formPipeline.dataAgendamento) : undefined,
+      observacoes: formPipeline.observacoesLead,
+      criadoEm: leadExistente?.criadoEm ?? new Date(),
+      tenantId,
+    };
+    onLeadUpsert(lead);
+    setSalvoPipeline(true);
+    setTimeout(() => setSalvoPipeline(false), 2000);
+  }
+
+  function salvarBot() {
+    if (!selecionado) return;
+    const atualizado: ContatoCRM = { ...selecionado, instrucaoBot: instrucaoBot.trim() || undefined };
+    onContatoAtualizado(atualizado);
+    setSelecionado(atualizado);
+    setSalvoBot(true);
+    setTimeout(() => setSalvoBot(false), 2000);
+  }
+
+  function iniciarConversa() {
+    if (!selecionado) return;
+    // Garante que instrucaoBot está salvo antes de iniciar
+    const atualizado: ContatoCRM = { ...selecionado, instrucaoBot: instrucaoBot.trim() || undefined };
+    onContatoAtualizado(atualizado);
+    onIniciarConversa(atualizado);
   }
 
   const painelAberto = selecionado !== null || modoNovo;
@@ -700,35 +843,28 @@ const Contatos: React.FC<ContatosProps> = ({ contatos, tenantId, onContatoAtuali
     fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4,
   };
 
+  const leadAtual = selecionado ? leadDoContato(selecionado.id) : undefined;
+
   return (
     <div style={{ display: 'flex', gap: 16, minHeight: 500 }}>
       {/* ── Lista ────────────────────────────────────────────────── */}
       <div style={{ flex: 1, minWidth: 0 }}>
-        {/* Toolbar */}
         <div style={{ display: 'flex', gap: 10, marginBottom: 12, alignItems: 'center' }}>
           <div style={{ flex: 1, position: 'relative', maxWidth: 360 }}>
             <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
-            <input
-              value={busca}
-              onChange={e => setBusca(e.target.value)}
+            <input value={busca} onChange={e => setBusca(e.target.value)}
               placeholder="Buscar por nome, telefone ou e-mail..."
-              style={{ width: '100%', padding: '8px 12px 8px 34px', fontSize: 13, border: '1px solid #e5e7eb', borderRadius: 8, boxSizing: 'border-box' }}
-            />
+              style={{ width: '100%', padding: '8px 12px 8px 34px', fontSize: 13, border: '1px solid #e5e7eb', borderRadius: 8, boxSizing: 'border-box' }} />
           </div>
-          <button
-            onClick={abrirNovo}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '8px 16px', borderRadius: 8, border: 'none',
-              background: '#3b82f6', color: 'white', fontWeight: 700, fontSize: 13, cursor: 'pointer',
-              flexShrink: 0,
-            }}
-          >
+          <button onClick={abrirNovo} style={{
+            display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px',
+            borderRadius: 8, border: 'none', background: '#3b82f6', color: 'white',
+            fontWeight: 700, fontSize: 13, cursor: 'pointer', flexShrink: 0,
+          }}>
             <Plus size={15} /> Novo Contato
           </button>
         </div>
 
-        {/* Contador */}
         <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 10 }}>
           {filtrados.length} contato{filtrados.length !== 1 ? 's' : ''}
         </div>
@@ -737,16 +873,13 @@ const Contatos: React.FC<ContatosProps> = ({ contatos, tenantId, onContatoAtuali
           {filtrados.map(c => {
             const badge = statusBadge(c.status);
             const ativo = selecionado?.id === c.id;
+            const lead = leadDoContato(c.id);
             return (
-              <div
-                key={c.id}
-                onClick={() => abrirDetalhe(c)}
-                style={{
-                  background: ativo ? '#eff6ff' : 'white', padding: '13px 16px', borderRadius: 10,
-                  border: `1px solid ${ativo ? '#93c5fd' : '#e5e7eb'}`, display: 'flex', alignItems: 'center', gap: 14,
-                  cursor: 'pointer', transition: 'all 0.15s',
-                }}
-              >
+              <div key={c.id} onClick={() => abrirDetalhe(c)} style={{
+                background: ativo ? '#eff6ff' : 'white', padding: '13px 16px', borderRadius: 10,
+                border: `1px solid ${ativo ? '#93c5fd' : '#e5e7eb'}`, display: 'flex', alignItems: 'center', gap: 14,
+                cursor: 'pointer', transition: 'all 0.15s',
+              }}>
                 <div style={{
                   width: 42, height: 42, borderRadius: '50%', background: ativo ? '#dbeafe' : '#eff6ff',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, color: '#3b82f6', flexShrink: 0,
@@ -757,13 +890,15 @@ const Contatos: React.FC<ContatosProps> = ({ contatos, tenantId, onContatoAtuali
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     <span style={{ fontWeight: 700, fontSize: 13, color: '#111827' }}>{c.nome}</span>
                     <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 10, background: badge.color + '20', color: badge.color, fontWeight: 600 }}>{badge.label}</span>
-                    {c.canal === 'whatsapp'
-                      ? <MessageCircle size={12} style={{ color: '#25d366' }} />
-                      : <Instagram size={12} style={{ color: '#e1306c' }} />
-                    }
+                    {c.canal === 'whatsapp' ? <MessageCircle size={12} style={{ color: '#25d366' }} /> : <Instagram size={12} style={{ color: '#e1306c' }} />}
                     {c.instrucaoBot && (
                       <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 10, background: '#f0fdf4', color: '#16a34a', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 3 }}>
                         <Bot size={9} /> Bot instruído
+                      </span>
+                    )}
+                    {lead && (
+                      <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 10, background: '#fdf4ff', color: '#7c3aed', fontWeight: 600 }}>
+                        {PIPELINE_LABELS[lead.etapaPipeline]}
                       </span>
                     )}
                   </div>
@@ -774,9 +909,7 @@ const Contatos: React.FC<ContatosProps> = ({ contatos, tenantId, onContatoAtuali
                   </div>
                   {c.tags.length > 0 && (
                     <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
-                      {c.tags.map(t => (
-                        <span key={t} style={{ fontSize: 10, padding: '1px 6px', borderRadius: 6, background: '#f3f4f6', color: '#374151' }}>{t}</span>
-                      ))}
+                      {c.tags.map(t => <span key={t} style={{ fontSize: 10, padding: '1px 6px', borderRadius: 6, background: '#f3f4f6', color: '#374151' }}>{t}</span>)}
                     </div>
                   )}
                 </div>
@@ -789,148 +922,266 @@ const Contatos: React.FC<ContatosProps> = ({ contatos, tenantId, onContatoAtuali
           })}
           {filtrados.length === 0 && (
             <div style={{ textAlign: 'center', padding: '48px 0', color: '#9ca3af', fontSize: 14 }}>
-              {busca ? 'Nenhum contato encontrado para essa busca.' : 'Nenhum contato cadastrado. Clique em "Novo Contato" para começar.'}
+              {busca ? 'Nenhum contato encontrado.' : 'Nenhum contato cadastrado. Clique em "Novo Contato" para começar.'}
             </div>
           )}
         </div>
       </div>
 
-      {/* ── Painel de detalhe / formulário ───────────────────────── */}
+      {/* ── Painel lateral ───────────────────────────────────────── */}
       {painelAberto && (
-        <div style={{ width: 360, flexShrink: 0, border: '1px solid #e5e7eb', borderRadius: 12, background: 'white', display: 'flex', flexDirection: 'column', alignSelf: 'flex-start', overflow: 'hidden' }}>
-          {/* Header do painel */}
-          <div style={{ padding: '14px 18px', borderBottom: '1px solid #f3f4f6', background: modoNovo ? '#f0fdf4' : '#f9fafb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontWeight: 700, fontSize: 14, color: '#111827' }}>
-              {modoNovo ? '+ Novo Contato' : 'Editar Contato'}
-            </span>
-            <button onClick={fecharPainel} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', padding: 2, display: 'flex', alignItems: 'center' }}>
+        <div style={{ width: 370, flexShrink: 0, border: '1px solid #e5e7eb', borderRadius: 12, background: 'white', display: 'flex', flexDirection: 'column', alignSelf: 'flex-start', overflow: 'hidden' }}>
+          {/* Header */}
+          <div style={{ padding: '13px 16px', borderBottom: '1px solid #f3f4f6', background: modoNovo ? '#f0fdf4' : '#f9fafb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {selecionado && (
+                <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, color: '#3b82f6' }}>
+                  {selecionado.nome.charAt(0).toUpperCase()}
+                </div>
+              )}
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 13, color: '#111827' }}>
+                  {modoNovo ? '+ Novo Contato' : selecionado?.nome}
+                </div>
+                {selecionado && <div style={{ fontSize: 11, color: '#6b7280' }}>{selecionado.telefone}</div>}
+              </div>
+            </div>
+            <button onClick={fecharPainel} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', display: 'flex' }}>
               <XCircle size={18} />
             </button>
           </div>
 
-          {/* Formulário */}
-          <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto', maxHeight: 680 }}>
-
-            {/* Nome */}
-            <div>
-              <label style={labelStyle}>Nome *</label>
-              <input value={form.nome} onChange={e => campo('nome', e.target.value)}
-                placeholder="Nome completo" style={inputStyle} />
+          {/* Sub-abas (ocultas no modo novo) */}
+          {!modoNovo && (
+            <div style={{ display: 'flex', borderBottom: '1px solid #f3f4f6' }}>
+              {(['dados', 'pipeline', 'bot'] as const).map(a => {
+                const labels = { dados: 'Dados', pipeline: 'Pipeline', bot: 'Bot' };
+                const icons: Record<string, React.ReactNode> = {
+                  dados: <Users size={12} />, pipeline: <TrendingUp size={12} />, bot: <Bot size={12} />,
+                };
+                return (
+                  <button key={a} onClick={() => setAbaPainel(a)} style={{
+                    flex: 1, padding: '9px 4px', border: 'none', background: 'transparent',
+                    fontSize: 12, fontWeight: abaPainel === a ? 700 : 500,
+                    color: abaPainel === a ? '#3b82f6' : '#6b7280',
+                    borderBottom: abaPainel === a ? '2px solid #3b82f6' : '2px solid transparent',
+                    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                  }}>
+                    {icons[a]} {labels[a]}
+                    {a === 'pipeline' && leadAtual && (
+                      <span style={{ fontSize: 9, background: '#f3e8ff', color: '#7c3aed', padding: '1px 5px', borderRadius: 8, fontWeight: 700 }}>
+                        {PIPELINE_LABELS[leadAtual.etapaPipeline].split(' ')[0]}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
+          )}
 
-            {/* Telefone + Canal */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8 }}>
-              <div>
-                <label style={labelStyle}>Telefone *</label>
-                <input value={form.telefone} onChange={e => campo('telefone', e.target.value)}
-                  placeholder="+55 11 99999-9999" style={inputStyle} />
-              </div>
-              <div>
-                <label style={labelStyle}>Canal</label>
-                <select value={form.canal} onChange={e => campo('canal', e.target.value as Canal)}
-                  style={{ ...inputStyle, width: 'auto', cursor: 'pointer' }}>
-                  {CANAL_OPTIONS.map(c => (
-                    <option key={c} value={c}>{c === 'whatsapp' ? 'WhatsApp' : 'Instagram'}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
+          {/* Conteúdo */}
+          <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto', maxHeight: 600 }}>
 
-            {/* E-mail */}
-            <div>
-              <label style={labelStyle}>E-mail</label>
-              <input value={form.email} onChange={e => campo('email', e.target.value)}
-                placeholder="email@exemplo.com" type="email" style={inputStyle} />
-            </div>
-
-            {/* Status + Etapa */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              <div>
-                <label style={labelStyle}>Status</label>
-                <select value={form.status} onChange={e => campo('status', e.target.value as StatusConversa)}
-                  style={{ ...inputStyle, cursor: 'pointer' }}>
-                  {STATUS_OPTIONS.map(s => (
-                    <option key={s} value={s}>{statusBadge(s as StatusConversa).label}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label style={labelStyle}>Etapa</label>
-                <select value={form.etapa} onChange={e => campo('etapa', e.target.value as EtapaConversa)}
-                  style={{ ...inputStyle, cursor: 'pointer' }}>
-                  {ETAPA_OPTIONS.map(e => (
-                    <option key={e} value={e}>{etapaLabel(e as EtapaConversa)}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Score */}
-            <div>
-              <label style={labelStyle}>Score de qualificação: <strong style={{ color: scoreColor(form.score) }}>{form.score}</strong></label>
-              <input type="range" min={0} max={100} value={form.score}
-                onChange={e => campo('score', Number(e.target.value))}
-                style={{ width: '100%', cursor: 'pointer' }} />
-            </div>
-
-            {/* Tags */}
-            <div>
-              <label style={labelStyle}>Tags <span style={{ fontWeight: 400, color: '#9ca3af' }}>(separadas por vírgula)</span></label>
-              <input value={form.tagsTexto} onChange={e => campo('tagsTexto', e.target.value)}
-                placeholder="Ex: Trabalhista, Urgente, Indicação" style={inputStyle} />
-            </div>
-
-            <hr style={{ border: 'none', borderTop: '1px solid #f3f4f6', margin: '4px 0' }} />
-
-            {/* Instruções do Bot */}
-            <div>
-              <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 5 }}>
-                <Bot size={13} style={{ color: '#3b82f6' }} /> Instruções para o Bot
-              </label>
-              <textarea value={form.instrucaoBot} onChange={e => campo('instrucaoBot', e.target.value)}
-                rows={3}
-                placeholder="Ex: Lead interessado em divórcio consensual. Focar em agendar consulta com a Dra. Ana."
-                style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 }} />
-            </div>
-
-            {/* Observações */}
-            <div>
-              <label style={labelStyle}>Observações internas</label>
-              <textarea value={form.observacoes} onChange={e => campo('observacoes', e.target.value)}
-                rows={3}
-                placeholder="Notas que ficam visíveis apenas para a equipe..."
-                style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 }} />
-            </div>
-
-            {/* Erro */}
-            {erro && (
-              <div style={{ fontSize: 12, color: '#dc2626', background: '#fef2f2', padding: '8px 12px', borderRadius: 7 }}>
-                {erro}
-              </div>
+            {/* ── ABA DADOS ── */}
+            {(modoNovo || abaPainel === 'dados') && (
+              <>
+                <div>
+                  <label style={labelStyle}>Nome *</label>
+                  <input value={form.nome} onChange={e => campoForm('nome', e.target.value)} placeholder="Nome completo" style={inputStyle} />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8 }}>
+                  <div>
+                    <label style={labelStyle}>Telefone *</label>
+                    <input value={form.telefone} onChange={e => campoForm('telefone', e.target.value)} placeholder="+55 11 99999-9999" style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Canal</label>
+                    <select value={form.canal} onChange={e => campoForm('canal', e.target.value as Canal)} style={{ ...inputStyle, width: 'auto', cursor: 'pointer' }}>
+                      {CANAL_OPTIONS.map(c => <option key={c} value={c}>{c === 'whatsapp' ? 'WhatsApp' : 'Instagram'}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label style={labelStyle}>E-mail</label>
+                  <input value={form.email} onChange={e => campoForm('email', e.target.value)} placeholder="email@exemplo.com" type="email" style={inputStyle} />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div>
+                    <label style={labelStyle}>Status</label>
+                    <select value={form.status} onChange={e => campoForm('status', e.target.value as StatusConversa)} style={{ ...inputStyle, cursor: 'pointer' }}>
+                      {STATUS_OPTIONS.map(s => <option key={s} value={s}>{statusBadge(s as StatusConversa).label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Etapa da conversa</label>
+                    <select value={form.etapa} onChange={e => campoForm('etapa', e.target.value as EtapaConversa)} style={{ ...inputStyle, cursor: 'pointer' }}>
+                      {ETAPA_OPTIONS.map(e => <option key={e} value={e}>{etapaLabel(e as EtapaConversa)}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label style={labelStyle}>Score: <strong style={{ color: scoreColor(form.score) }}>{form.score}</strong></label>
+                  <input type="range" min={0} max={100} value={form.score} onChange={e => campoForm('score', Number(e.target.value))} style={{ width: '100%', cursor: 'pointer' }} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Tags <span style={{ fontWeight: 400, color: '#9ca3af' }}>(separadas por vírgula)</span></label>
+                  <input value={form.tagsTexto} onChange={e => campoForm('tagsTexto', e.target.value)} placeholder="Trabalhista, Urgente, Indicação" style={inputStyle} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Observações internas</label>
+                  <textarea value={form.observacoes} onChange={e => campoForm('observacoes', e.target.value)} rows={2} placeholder="Notas visíveis apenas para a equipe..." style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 }} />
+                </div>
+                {erro && <div style={{ fontSize: 12, color: '#dc2626', background: '#fef2f2', padding: '8px 12px', borderRadius: 7 }}>{erro}</div>}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={salvarDados} style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: 'none', background: salvo ? '#22c55e' : '#3b82f6', color: 'white', fontWeight: 700, fontSize: 13, cursor: 'pointer', transition: 'background 0.2s' }}>
+                    {salvo ? '✓ Salvo!' : modoNovo ? 'Cadastrar Contato' : 'Salvar Dados'}
+                  </button>
+                  <button onClick={fecharPainel} style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', color: '#374151', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+                    Cancelar
+                  </button>
+                </div>
+                {!modoNovo && selecionado && (
+                  <button
+                    onClick={() => {
+                      if (window.confirm(`Excluir o contato "${selecionado.nome}" e todas as suas mensagens? Esta ação não pode ser desfeita.`)) {
+                        onExcluirContato(selecionado.id);
+                        fecharPainel();
+                      }
+                    }}
+                    style={{ width: '100%', padding: '8px 0', borderRadius: 8, border: '1px solid #fee2e2', background: '#fff5f5', color: '#dc2626', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}
+                  >
+                    🗑 Excluir este contato
+                  </button>
+                )}
+              </>
             )}
 
-            {/* Botões */}
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                onClick={salvar}
-                style={{
-                  flex: 1, padding: '10px 0', borderRadius: 8, border: 'none',
-                  background: salvo ? '#22c55e' : '#3b82f6', color: 'white',
-                  fontWeight: 700, fontSize: 13, cursor: 'pointer', transition: 'background 0.2s',
-                }}
-              >
-                {salvo ? '✓ Salvo!' : modoNovo ? 'Cadastrar Contato' : 'Salvar Alterações'}
-              </button>
-              <button
-                onClick={fecharPainel}
-                style={{
-                  padding: '10px 16px', borderRadius: 8, border: '1px solid #e5e7eb',
-                  background: 'white', color: '#374151', fontWeight: 600, fontSize: 13, cursor: 'pointer',
-                }}
-              >
-                Cancelar
-              </button>
-            </div>
+            {/* ── ABA PIPELINE ── */}
+            {!modoNovo && abaPainel === 'pipeline' && (
+              <>
+                {leadAtual && (
+                  <div style={{ background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#5b21b6' }}>
+                    Lead existente · Etapa: <strong>{PIPELINE_LABELS[leadAtual.etapaPipeline]}</strong>
+                  </div>
+                )}
+
+                <div>
+                  <label style={labelStyle}>Etapa do Pipeline *</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                    {PIPELINE_OPTIONS.map(ep => {
+                      const col = PIPELINE_COLUNAS.find(c => c.etapa === ep);
+                      const sel = formPipeline.etapaPipeline === ep;
+                      return (
+                        <button key={ep} onClick={() => campoPipeline('etapaPipeline', ep)} style={{
+                          padding: '8px 6px', borderRadius: 8, border: `2px solid ${sel ? (col?.color ?? '#3b82f6') : '#e5e7eb'}`,
+                          background: sel ? (col?.color ?? '#3b82f6') + '15' : 'white',
+                          color: sel ? (col?.color ?? '#3b82f6') : '#374151',
+                          fontWeight: sel ? 700 : 500, fontSize: 12, cursor: 'pointer', textAlign: 'center',
+                        }}>
+                          {PIPELINE_LABELS[ep]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <label style={labelStyle}>Área Jurídica</label>
+                  <input value={formPipeline.areaJuridica} onChange={e => campoPipeline('areaJuridica', e.target.value)} placeholder="Ex: Direito Trabalhista" style={inputStyle} />
+                </div>
+
+                <div>
+                  <label style={labelStyle}>Urgência</label>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {(['baixa', 'media', 'alta'] as const).map(u => {
+                      const colors = { baixa: '#22c55e', media: '#f59e0b', alta: '#ef4444' };
+                      const labels = { baixa: '🟢 Baixa', media: '🟡 Média', alta: '🔴 Alta' };
+                      const sel = formPipeline.urgencia === u;
+                      return (
+                        <button key={u} onClick={() => campoPipeline('urgencia', u)} style={{
+                          flex: 1, padding: '7px 4px', borderRadius: 7, border: `2px solid ${sel ? colors[u] : '#e5e7eb'}`,
+                          background: sel ? colors[u] + '15' : 'white', color: sel ? colors[u] : '#374151',
+                          fontWeight: sel ? 700 : 500, fontSize: 12, cursor: 'pointer',
+                        }}>
+                          {labels[u]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <label style={labelStyle}>Problema relatado</label>
+                  <textarea value={formPipeline.problemaRelatado} onChange={e => campoPipeline('problemaRelatado', e.target.value)} rows={3} placeholder="Descrição do problema jurídico..." style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 }} />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div>
+                    <label style={labelStyle}>Advogado responsável</label>
+                    <input value={formPipeline.advogadoResponsavel} onChange={e => campoPipeline('advogadoResponsavel', e.target.value)} placeholder="Dr(a). Nome" style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Data de agendamento</label>
+                    <input type="date" value={formPipeline.dataAgendamento} onChange={e => campoPipeline('dataAgendamento', e.target.value)} style={inputStyle} />
+                  </div>
+                </div>
+
+                <div>
+                  <label style={labelStyle}>Observações do lead</label>
+                  <textarea value={formPipeline.observacoesLead} onChange={e => campoPipeline('observacoesLead', e.target.value)} rows={2} placeholder="Notas sobre o andamento..." style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 }} />
+                </div>
+
+                <button onClick={salvarPipeline} style={{ padding: '10px 0', borderRadius: 8, border: 'none', background: salvoPipeline ? '#22c55e' : '#7c3aed', color: 'white', fontWeight: 700, fontSize: 13, cursor: 'pointer', transition: 'background 0.2s' }}>
+                  {salvoPipeline ? '✓ Salvo no Pipeline!' : leadAtual ? 'Atualizar no Pipeline' : 'Adicionar ao Pipeline'}
+                </button>
+              </>
+            )}
+
+            {/* ── ABA BOT ── */}
+            {!modoNovo && abaPainel === 'bot' && (
+              <>
+                <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '10px 12px', fontSize: 12, color: '#1d4ed8', lineHeight: 1.6 }}>
+                  <strong>Como funciona:</strong> As instruções abaixo são injetadas no contexto do assistente virtual antes de qualquer mensagem com este contato. Use para definir o objetivo, área jurídica de interesse, advogado preferencial ou qualquer outra orientação estratégica.
+                </div>
+
+                <div>
+                  <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <Bot size={13} style={{ color: '#3b82f6' }} /> Instruções para o Bot
+                  </label>
+                  <textarea
+                    value={instrucaoBot}
+                    onChange={e => setInstrucaoBot(e.target.value)}
+                    rows={5}
+                    placeholder="Ex: Lead indicado pela Dra. Carla. Interesse confirmado em ação de danos morais contra empregador. Prioridade alta. Agendar consulta com Dr. Paulo nas próximas 48h."
+                    style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.6 }}
+                  />
+                </div>
+
+                <button onClick={salvarBot} style={{ padding: '9px 0', borderRadius: 8, border: 'none', background: salvoBot ? '#22c55e' : '#3b82f6', color: 'white', fontWeight: 700, fontSize: 13, cursor: 'pointer', transition: 'background 0.2s' }}>
+                  {salvoBot ? '✓ Instruções salvas!' : 'Salvar Instruções'}
+                </button>
+
+                <hr style={{ border: 'none', borderTop: '1px solid #f3f4f6', margin: '4px 0' }} />
+
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#111827', marginBottom: 6 }}>Iniciar conversa agora</div>
+                  <p style={{ margin: '0 0 10px 0', fontSize: 12, color: '#6b7280', lineHeight: 1.5 }}>
+                    O assistente virtual enviará a saudação inicial a este contato usando as instruções acima como objetivo.
+                  </p>
+                  <button
+                    onClick={iniciarConversa}
+                    style={{
+                      width: '100%', padding: '11px 0', borderRadius: 8, border: 'none',
+                      background: 'linear-gradient(135deg, #25d366, #128c7e)',
+                      color: 'white', fontWeight: 700, fontSize: 13, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    }}
+                  >
+                    <MessageCircle size={16} /> Iniciar Conversa com Bot
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -1055,6 +1306,7 @@ const WhatsAppCRM: React.FC = () => {
   const [leads, setLeads] = useState<LeadCRM[]>([]);
   const [mensagens, setMensagens] = useState<Record<string, MensagemCRM[]>>({});
   const [aba, setAba] = useState<Aba>('inbox');
+  const [autoIniciarId, setAutoIniciarId] = useState<string | null>(null);
 
   const kbScore = calcularScore(knowledge);
   const kbPct = Math.round(
@@ -1070,6 +1322,29 @@ const WhatsAppCRM: React.FC = () => {
 
   function moverLead(id: string, etapa: EtapaPipeline) {
     setLeads(prev => prev.map(l => l.id === id ? { ...l, etapaPipeline: etapa } : l));
+  }
+
+  function upsertLead(lead: LeadCRM) {
+    setLeads(prev => {
+      const idx = prev.findIndex(l => l.id === lead.id || l.contatoId === lead.contatoId);
+      if (idx >= 0) { const next = [...prev]; next[idx] = lead; return next; }
+      return [...prev, lead];
+    });
+  }
+
+  function excluirContato(id: string) {
+    setContatos(prev => prev.filter(c => c.id !== id));
+    setLeads(prev => prev.filter(l => l.contatoId !== id));
+    setMensagens(prev => { const next = { ...prev }; delete next[id]; return next; });
+  }
+
+  function excluirConversa(contatoId: string) {
+    setMensagens(prev => { const next = { ...prev }; delete next[contatoId]; return next; });
+  }
+
+  function iniciarConversa(c: ContatoCRM) {
+    setAutoIniciarId(c.id);
+    setAba('inbox');
   }
 
   const abas: { id: Aba; label: string; icon: React.ReactNode; badge?: string }[] = [
@@ -1172,10 +1447,13 @@ const WhatsAppCRM: React.FC = () => {
           tenantId={tenantId}
           knowledge={knowledge}
           geminiApiKey={geminiApiKey}
+          autoIniciarContatoId={autoIniciarId}
           onContatoAtualizado={c => setContatos(prev => prev.map(x => x.id === c.id ? c : x))}
           onMensagemEnviada={(cid, msg) => setMensagens(prev => ({
             ...prev, [cid]: [...(prev[cid] ?? []), msg]
           }))}
+          onExcluirConversa={excluirConversa}
+          onAutoIniciado={() => setAutoIniciarId(null)}
         />
       )}
       {aba === 'pipeline' && (
@@ -1184,9 +1462,13 @@ const WhatsAppCRM: React.FC = () => {
       {aba === 'contatos' && (
         <Contatos
           contatos={contatos}
+          leads={leads}
           tenantId={tenantId}
           onContatoAtualizado={c => setContatos(prev => prev.map(x => x.id === c.id ? c : x))}
           onNovoContato={c => setContatos(prev => [...prev, c])}
+          onExcluirContato={excluirContato}
+          onLeadUpsert={upsertLead}
+          onIniciarConversa={iniciarConversa}
         />
       )}
       {aba === 'assistente' && (
