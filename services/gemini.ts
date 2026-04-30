@@ -127,6 +127,7 @@ interface LegalDocumentRequest {
   facts: string;
   thesis?: string;
   tone?: string;
+  attachments?: { data: string; mimeType: string }[];
 }
 
 export async function generateLegalDocument(req: LegalDocumentRequest): Promise<string> {
