@@ -266,6 +266,7 @@ CREATE TABLE IF NOT EXISTS public.publications (
 
 -- ─── ROW LEVEL SECURITY ───────────────────────────────────────────────────────
 -- Política padrão: cada tabela visível apenas para usuários do mesmo tenant.
+-- Usando DROP POLICY IF EXISTS antes de cada CREATE para tornar este script idempotente.
 
 ALTER TABLE public.tenants      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.users        ENABLE ROW LEVEL SECURITY;
@@ -280,6 +281,28 @@ ALTER TABLE public.channels     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.chat_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.publications  ENABLE ROW LEVEL SECURITY;
+
+-- Remover policies existentes antes de recriar (idempotente)
+DROP POLICY IF EXISTS "tenants_select" ON public.tenants;
+DROP POLICY IF EXISTS "tenants_insert" ON public.tenants;
+DROP POLICY IF EXISTS "tenants_update" ON public.tenants;
+DROP POLICY IF EXISTS "users_select"   ON public.users;
+DROP POLICY IF EXISTS "users_insert"   ON public.users;
+DROP POLICY IF EXISTS "users_update"   ON public.users;
+DROP POLICY IF EXISTS "users_delete"   ON public.users;
+
+DO $$
+DECLARE tbl TEXT;
+BEGIN
+  FOREACH tbl IN ARRAY ARRAY[
+    'clients','cases','transactions','tasks','deadlines',
+    'hearings','events','channels','chat_messages','notifications','publications'
+  ] LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', tbl || '_tenant_isolation', tbl);
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', tbl || '_tenant_insert', tbl);
+  END LOOP;
+END;
+$$;
 
 -- tenants: leitura própria + INSERT público (criação de conta)
 CREATE POLICY "tenants_select" ON public.tenants
@@ -301,8 +324,7 @@ CREATE POLICY "users_delete" ON public.users
 
 -- Macro para gerar policies idênticas nas demais tabelas
 DO $$
-DECLARE
-  tbl TEXT;
+DECLARE tbl TEXT;
 BEGIN
   FOREACH tbl IN ARRAY ARRAY[
     'clients','cases','transactions','tasks','deadlines',
