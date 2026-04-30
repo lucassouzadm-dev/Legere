@@ -1299,8 +1299,12 @@ const WhatsAppCRM: React.FC = () => {
     loadKnowledge(tenantId, getConfiguracaoPadrao().nomeEscritorio)
   );
   const [geminiApiKey] = useState<string | undefined>(() => {
+    // 1. Chave própria do tenant (configurada manualmente em Integrações)
     const integrations = loadIntegrations(tenantId);
-    return integrations.geminiApiKey || undefined;
+    if (integrations.geminiApiKey?.trim()) return integrations.geminiApiKey.trim();
+    // 2. Chave da plataforma (VITE_GEMINI_API_KEY no Vercel) — disponível para todos os planos no CRM
+    const platformKey = import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
+    return platformKey?.trim() || undefined;
   });
   const [contatos, setContatos] = useState<ContatoCRM[]>([]);
   const [leads, setLeads] = useState<LeadCRM[]>([]);
