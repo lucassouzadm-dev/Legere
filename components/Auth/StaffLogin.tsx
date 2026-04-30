@@ -1,16 +1,19 @@
 import React, { useState } from 'react';
 import { Logo, APP_NAME, APP_TAGLINE } from '../../constants';
-import { UserRole } from '../../types';
+import { UserRole, Tenant } from '../../types';
 
 interface StaffLoginProps {
   onLogin: (email: string, password: string) => void;
   onSignUp: (name: string, email: string, role: UserRole, password: string, oabNumber?: string, oabState?: string) => void;
   onClientLogin: (document: string) => void;
   onRegisterFirm: () => void;
+  /** Quando presente, o usuário acessou via link de convite de um escritório */
+  inviteTenant?: Tenant | null;
 }
 
-const StaffLogin: React.FC<StaffLoginProps> = ({ onLogin, onSignUp, onClientLogin, onRegisterFirm }) => {
-  const [view, setView] = useState<'LOGIN' | 'SIGNUP' | 'CLIENT'>('LOGIN');
+const StaffLogin: React.FC<StaffLoginProps> = ({ onLogin, onSignUp, onClientLogin, onRegisterFirm, inviteTenant }) => {
+  // Se vier de link de convite, começa direto no formulário de cadastro
+  const [view, setView] = useState<'LOGIN' | 'SIGNUP' | 'CLIENT'>(inviteTenant ? 'SIGNUP' : 'LOGIN');
   const [email, setEmail]           = useState('');
   const [password, setPassword]     = useState('');
   const [name, setName]             = useState('');
@@ -24,7 +27,8 @@ const StaffLogin: React.FC<StaffLoginProps> = ({ onLogin, onSignUp, onClientLogi
   const handleSignUp = (e: React.FormEvent) => {
     e.preventDefault();
     onSignUp(name, email, role, signUpPass, oabNumber || undefined, oabState || undefined);
-    setView('LOGIN');
+    // Se não for convite, volta ao login. Se for convite, App.tsx exibe a tela de confirmação.
+    if (!inviteTenant) setView('LOGIN');
   };
 
   return (
@@ -57,10 +61,12 @@ const StaffLogin: React.FC<StaffLoginProps> = ({ onLogin, onSignUp, onClientLogi
             className="flex items-center gap-2 text-xs font-bold text-gold-800 uppercase tracking-widest hover:text-white transition-colors">
             {view === 'CLIENT' ? '← Voltar ao Login' : 'Acesso para Clientes →'}
           </button>
-          <button onClick={onRegisterFirm}
-            className="flex items-center gap-2 text-xs font-bold text-navy-300 uppercase tracking-widest hover:text-white transition-colors">
-            🏢 Registrar novo escritório →
-          </button>
+          {!inviteTenant && (
+            <button onClick={onRegisterFirm}
+              className="flex items-center gap-2 text-xs font-bold text-navy-300 uppercase tracking-widest hover:text-white transition-colors">
+              🏢 Registrar novo escritório →
+            </button>
+          )}
         </div>
       </div>
 
@@ -107,7 +113,20 @@ const StaffLogin: React.FC<StaffLoginProps> = ({ onLogin, onSignUp, onClientLogi
           {/* SIGNUP STAFF */}
           {view === 'SIGNUP' && (
             <>
-              <h3 className="text-2xl font-serif font-bold text-navy-800 dark:text-white mb-8">Solicitar Acesso</h3>
+              {/* Banner de convite */}
+              {inviteTenant && (
+                <div className="mb-6 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-2xl flex items-start gap-3">
+                  <span className="text-2xl mt-0.5">🏛️</span>
+                  <div>
+                    <p className="text-xs font-bold text-amber-800 dark:text-amber-400 uppercase tracking-widest">Convite recebido</p>
+                    <p className="text-sm font-bold text-navy-800 dark:text-white mt-0.5">{inviteTenant.name}</p>
+                    <p className="text-xs text-amber-700 dark:text-amber-500 mt-1">Preencha o formulário para solicitar seu acesso. O administrador irá aprovar em seguida.</p>
+                  </div>
+                </div>
+              )}
+              <h3 className="text-2xl font-serif font-bold text-navy-800 dark:text-white mb-8">
+                {inviteTenant ? 'Criar Minha Conta' : 'Solicitar Acesso'}
+              </h3>
               <form onSubmit={handleSignUp} className="space-y-4">
                 <div>
                   <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Nome Completo *</label>

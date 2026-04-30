@@ -47,6 +47,9 @@ const App: React.FC = () => {
   const [authState, setAuthState]       = useState<'NONE' | 'ONBOARDING' | 'STAFF' | 'CLIENT'>('NONE');
   const [currentUser, setCurrentUser]   = useState<any>(null);
   const [tenant, setTenant]             = useState<Tenant | null>(null);
+  // Convite: tenant carregado via ?t= na URL (sem autenticação ainda)
+  const [inviteTenant, setInviteTenant] = useState<Tenant | null>(null);
+  const [signUpSuccess, setSignUpSuccess] = useState(false);
   const [activeModule, setActiveModule] = useState('dashboard');
   const [isDarkMode, setIsDarkMode]     = useState(false);
   const [rolePerms, setRolePerms]       = useState<TenantRolePermissions | null>(null);
@@ -100,7 +103,21 @@ const App: React.FC = () => {
         }
       }
 
-      // 2. Fallback: restaurar tenant salvo no localStorage
+      // 2. Verificar link de convite (?t=tenantId na URL)
+      const urlParams = new URLSearchParams(window.location.search);
+      const inviteId = urlParams.get('t');
+      if (inviteId) {
+        const invT = await tenantsDb.getById(inviteId);
+        if (invT) {
+          setInviteTenant(invT);
+          // Pré-carrega o tenant para que handleSignUp encontre via getCurrentTenantId()
+          setCurrentTenant(invT);
+        }
+        setIsLoaded(true);
+        return;
+      }
+
+      // 3. Fallback: restaurar tenant salvo no localStorage
       const savedTenant = getCurrentTenant();
       if (savedTenant) {
         setTenant(savedTenant);
@@ -550,18 +567,19 @@ const App: React.FC = () => {
     const tenantId = getCurrentTenantId();
     if (!tenantId) { alert('Escritório não identificado. Use o link de convite do seu escritório.'); return; }
 
-    // Tenta criar via Supabase Auth (o trigger criará public.users com status PENDING)
+    // Tenta criar via Supabase Auth — trigger handle_new_auth_user() criará
+    // public.users com status PENDING (aguarda aprovação do admin)
     const authResult = await authService.signUpStaff({
       email, password: pass, tenantId, name, role, oabNumber, oabState,
     });
 
     if (!authResult.fallback && !authResult.success) {
-      alert(authResult.error || 'Erro ao criar conta. Tente novamente.');
+      alert(authResult.error || 'Erro ao criar conta. Verifique se o e-mail já está em uso.');
       return;
     }
 
     if (authResult.fallback) {
-      // Sem Supabase: cria localmente com senha
+      // Modo offline: cria localmente com status PENDING
       const newUser = {
         id: `u-${Date.now()}`, name, email, role,
         status: UserStatus.PENDING, password: pass, monthlyGoal: 0,
@@ -570,7 +588,9 @@ const App: React.FC = () => {
       await usersDb.upsert(newUser);
     }
 
-    alert('Solicitação enviada! Aguarde aprovação do administrador.');
+    // Limpa o invite tenant do contexto e mostra tela de confirmação
+    setInviteTenant(null);
+    setSignUpSuccess(true);
   }, []);
 
   const handleClientLogin = useCallback((doc: string) => {
@@ -616,6 +636,26 @@ const App: React.FC = () => {
     <TenantOnboarding onComplete={handleOnboardingComplete} onBack={() => setAuthState('NONE')} />
   );
 
+  // ── Confirmação de cadastro via convite ──────────────────────────────────
+
+  if (signUpSuccess) return (
+    <div className={`min-h-screen flex items-center justify-center p-4 bg-gray-100 dark:bg-slate-900 ${isDarkMode ? 'dark' : ''}`}>
+      <div className="w-full max-w-md bg-white dark:bg-slate-800 rounded-[2rem] shadow-2xl p-12 text-center space-y-6 border dark:border-slate-700 animate-in fade-in zoom-in-95 duration-500">
+        <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center mx-auto text-4xl">✅</div>
+        <h2 className="text-2xl font-bold font-serif dark:text-white">Solicitação Enviada!</h2>
+        <p className="text-gray-500 text-sm leading-relaxed">
+          Sua conta foi criada e está <strong>aguardando aprovação</strong> do administrador do escritório.<br/><br/>
+          Você receberá acesso assim que o administrador aprovar sua solicitação em <em>Configurações → Aprovações</em>.
+        </p>
+        <button
+          onClick={() => { setSignUpSuccess(false); }}
+          className="w-full bg-navy-800 text-white py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-gold-800 transition-all">
+          Voltar ao Login
+        </button>
+      </div>
+    </div>
+  );
+
   // ── Login ─────────────────────────────────────────────────────────────────
 
   if (authState === 'NONE') return (
@@ -625,6 +665,7 @@ const App: React.FC = () => {
         onSignUp={handleSignUp}
         onClientLogin={handleClientLogin}
         onRegisterFirm={() => setAuthState('ONBOARDING')}
+        inviteTenant={inviteTenant}
       />
     </div>
   );

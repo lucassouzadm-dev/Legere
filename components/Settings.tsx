@@ -36,6 +36,16 @@ const Settings: React.FC<SettingsProps> = ({ users, setUsers, clients, currentUs
   const [generatedPass, setGeneratedPass] = useState('');
   const [passwords, setPasswords] = useState({ current: '', next: '', confirm: '' });
   const [passwordSuccess, setPasswordSuccess] = useState(false);
+  const [inviteCopied, setInviteCopied] = useState(false);
+
+  const handleCopyInviteLink = () => {
+    if (!tenant?.id) return;
+    const link = `${window.location.origin}?t=${tenant.id}`;
+    navigator.clipboard.writeText(link).then(() => {
+      setInviteCopied(true);
+      setTimeout(() => setInviteCopied(false), 2500);
+    });
+  };
 
   // Slogan do escritório (editável pelo admin)
   const [slogan, setSlogan] = useState(tenant?.slogan ?? '');
@@ -281,6 +291,22 @@ const Settings: React.FC<SettingsProps> = ({ users, setUsers, clients, currentUs
                   + Novo Membro
                 </button>
               </div>
+
+              {/* ── Link de Convite ── */}
+              <div className="p-5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-2xl flex flex-col sm:flex-row sm:items-center gap-4">
+                <div className="flex-1">
+                  <p className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-widest mb-1">🔗 Link de Convite</p>
+                  <p className="text-xs text-amber-800 dark:text-amber-300">Envie este link para novos membros da equipe. Ao acessar, eles preencherão o cadastro e aguardarão sua aprovação em <strong>Aprovações</strong>.</p>
+                  <code className="mt-2 block text-[10px] text-amber-900 dark:text-amber-200 bg-amber-100 dark:bg-amber-900/40 px-3 py-1.5 rounded-lg break-all font-mono">
+                    {`${window.location.origin}?t=${tenant?.id ?? '...'}`}
+                  </code>
+                </div>
+                <button
+                  onClick={handleCopyInviteLink}
+                  className={`shrink-0 px-5 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${inviteCopied ? 'bg-green-600 text-white' : 'bg-amber-600 text-white hover:bg-amber-700'}`}>
+                  {inviteCopied ? '✓ Copiado!' : 'Copiar Link'}
+                </button>
+              </div>
               {users.filter(u => u.status === UserStatus.APPROVED).map((user: any) => (
                 <div key={user.id} className="p-4 border dark:border-slate-700 rounded-3xl flex items-center justify-between hover:border-gold-800 transition-colors">
                   <div className="flex items-center gap-4">
@@ -321,10 +347,16 @@ const Settings: React.FC<SettingsProps> = ({ users, setUsers, clients, currentUs
                     {u.oabNumber && <p className="text-xs text-gold-800 font-bold">OAB {u.oabNumber}/{u.oabState}</p>}
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={() => setUsers((prev: any[]) => prev.map(x => x.id === u.id ? { ...x, status: UserStatus.REJECTED } : x))}
-                      className="px-4 py-2 bg-red-50 text-red-600 rounded-xl text-[10px] font-bold uppercase hover:bg-red-600 hover:text-white transition-all">Recusar</button>
-                    <button onClick={() => setUsers((prev: any[]) => prev.map(x => x.id === u.id ? { ...x, status: UserStatus.APPROVED } : x))}
-                      className="px-4 py-2 bg-green-600 text-white rounded-xl text-[10px] font-bold uppercase hover:bg-green-700 transition-all">Aprovar</button>
+                    <button onClick={async () => {
+                      const updated = { ...u, status: UserStatus.REJECTED };
+                      await usersDb.upsert(updated);
+                      setUsers((prev: any[]) => prev.map(x => x.id === u.id ? updated : x));
+                    }} className="px-4 py-2 bg-red-50 text-red-600 rounded-xl text-[10px] font-bold uppercase hover:bg-red-600 hover:text-white transition-all">Recusar</button>
+                    <button onClick={async () => {
+                      const updated = { ...u, status: UserStatus.APPROVED };
+                      await usersDb.upsert(updated);
+                      setUsers((prev: any[]) => prev.map(x => x.id === u.id ? updated : x));
+                    }} className="px-4 py-2 bg-green-600 text-white rounded-xl text-[10px] font-bold uppercase hover:bg-green-700 transition-all">Aprovar</button>
                   </div>
                 </div>
               ))}
