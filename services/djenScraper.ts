@@ -336,6 +336,7 @@ export async function syncDjenPublications(
     const casesByCnj = new Map((cases ?? []).map((c: any) => [c.cnj?.trim(), c.id]));
 
     // 7. Montar registros para inserção (deduplicação dentro do batch também)
+    const tenantId = getCurrentTenantId();
     const toInsert: any[] = [];
     const batchIds = new Set<string>(); // evita duplicatas no mesmo batch
 
@@ -348,6 +349,8 @@ export async function syncDjenPublications(
       const caseId = casesByCnj.get((normalized.process_number ?? '').trim()) ?? null;
 
       toInsert.push({
+        id:               `pub-${normalized.djen_id}-${tenantId}`.slice(0, 120),
+        tenant_id:        tenantId,
         ...normalized,
         case_id:          caseId,
         status:           'unread',
@@ -377,6 +380,7 @@ export async function syncDjenPublications(
       .filter(p => p.lawyer_id)
       .map(p => ({
         id:           `pub-notif-${p.djen_id}-${Date.now()}`,
+        tenant_id:    tenantId,
         title:        '📰 Nova Publicação no DJEN',
         message:      `${p.tribunal ?? 'Tribunal'} — Proc. ${p.process_number ?? 'sem número'} — ${p.publication_date}`,
         recipient_id: p.lawyer_id,
