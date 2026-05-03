@@ -2,6 +2,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import Modal from './Modal';
 import { CaseStatus, Case } from '../types';
+import { getCurrentTenantId } from '../services/tenantService';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Cell } from 'recharts';
 
 interface CasesProps {
@@ -117,18 +118,23 @@ const Cases: React.FC<CasesProps> = ({ cases, setCases, clients, users }) => {
     const client = clients.find(c => c.id === selectedClientId);
 
     const caseData = {
-      id: editingCase?.id || `p${Date.now()}`,
-      cnj: formData.get('cnj') as string,
-      clientId: selectedClientId,
-      clientName: client?.name || 'Cliente Indefinido',
-      opposingParty: (formData.get('opposingParty') as string) || '',
-      area: formData.get('area') as string,
-      status: formData.get('status') as CaseStatus,
-      value: Number(formData.get('value')),
-      lawyerId: formData.get('lawyerId') as string,
-      lastMovement: formData.get('lastMovement') as string || (editingCase?.lastMovement || 'Processo cadastrado no sistema.'),
-      createdAt: editingCase?.createdAt || new Date().toISOString().split('T')[0],
-      distributionDate: formData.get('distributionDate') as string || new Date().toISOString().split('T')[0]
+      id:              editingCase?.id || `p${Date.now()}`,
+      cnj:             formData.get('cnj') as string,
+      clientId:        selectedClientId,
+      clientName:      client?.name || 'Cliente Indefinido',
+      opposingParty:   (formData.get('opposingParty') as string) || '',
+      area:            formData.get('area') as string,
+      court:           (formData.get('court') as string) || '',
+      status:          formData.get('status') as CaseStatus,
+      value:           Number(formData.get('value')),
+      lawyerId:        formData.get('lawyerId') as string,
+      lastMovement:    (formData.get('lastMovement') as string) || editingCase?.lastMovement || 'Processo cadastrado no sistema.',
+      // Preserva probability e risk ao editar; usa defaults ao criar
+      probability:     editingCase?.probability ?? 50,
+      risk:            editingCase?.risk ?? 'MEDIUM',
+      createdAt:       editingCase?.createdAt || new Date().toISOString(),
+      distributionDate: formData.get('distributionDate') as string || new Date().toISOString().split('T')[0],
+      tenantId:        editingCase?.tenantId || getCurrentTenantId(),
     };
 
     if (editingCase) {
@@ -264,7 +270,8 @@ const Cases: React.FC<CasesProps> = ({ cases, setCases, clients, users }) => {
                 </td>
                 <td className="p-4">
                   <p className="font-bold dark:text-white">{item.area}</p>
-                  <p className="text-[10px] text-gold-800 uppercase font-bold">{users.find(u => u.id === item.lawyerId)?.name || 'Sem Resp.'}</p>
+                  {item.court && <p className="text-[10px] text-gray-400 font-medium mt-0.5 truncate max-w-[160px]">{item.court}</p>}
+                  <p className="text-[10px] text-gold-800 uppercase font-bold mt-0.5">{users.find(u => u.id === item.lawyerId)?.name || 'Sem Resp.'}</p>
                 </td>
                 <td className="p-4">
                   <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full uppercase ${
@@ -368,6 +375,10 @@ const Cases: React.FC<CasesProps> = ({ cases, setCases, clients, users }) => {
             <div>
               <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Área</label>
               <input name="area" defaultValue={editingCase?.area} required className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Tribunal / Vara</label>
+              <input name="court" defaultValue={editingCase?.court} placeholder="Ex: TJBA — 1ª Vara Cível de Salvador" className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white" />
             </div>
             <div>
               <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Valor da Causa</label>

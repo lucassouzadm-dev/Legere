@@ -336,11 +336,12 @@ export interface Case {
   id: string;
   cnj: string;
   title: string;
+  lastMovement?: string;    // Última movimentação / descrição visível ao cliente
   clientId: string;
   clientName: string;
   opposingParty?: string;   // Parte adversa / parte contrária
   area: string;
-  court: string;
+  court?: string;           // Tribunal / vara
   status: CaseStatus;
   lawyerId: string;
   value: number;
