@@ -63,8 +63,9 @@ const Cases: React.FC<CasesProps> = ({ cases, setCases, clients, users }) => {
     if (!searchTerm.trim()) return cases;
     const lowerQ = searchTerm.toLowerCase();
     return cases.filter(c => 
-      c.cnj.toLowerCase().includes(lowerQ) || 
+      c.cnj.toLowerCase().includes(lowerQ) ||
       c.clientName.toLowerCase().includes(lowerQ) ||
+      (c.opposingParty ?? '').toLowerCase().includes(lowerQ) ||
       c.area.toLowerCase().includes(lowerQ)
     );
   }, [cases, searchTerm]);
@@ -120,6 +121,7 @@ const Cases: React.FC<CasesProps> = ({ cases, setCases, clients, users }) => {
       cnj: formData.get('cnj') as string,
       clientId: selectedClientId,
       clientName: client?.name || 'Cliente Indefinido',
+      opposingParty: (formData.get('opposingParty') as string) || '',
       area: formData.get('area') as string,
       status: formData.get('status') as CaseStatus,
       value: Number(formData.get('value')),
@@ -254,6 +256,11 @@ const Cases: React.FC<CasesProps> = ({ cases, setCases, clients, users }) => {
                   <p className="font-mono text-xs font-bold text-navy-800 dark:text-navy-100">{item.cnj}</p>
                   <p className="text-[10px] text-gray-400 uppercase font-bold tracking-tighter">Dist.: {item.distributionDate ? new Date(item.distributionDate + 'T00:00:00').toLocaleDateString('pt-BR') : 'N/A'}</p>
                   <p className="text-xs text-gray-500 mt-1 font-medium">{item.clientName}</p>
+                  {item.opposingParty && (
+                    <p className="text-[10px] text-red-500 dark:text-red-400 font-bold mt-0.5">
+                      <span className="text-gray-400 font-normal">vs.</span> {item.opposingParty}
+                    </p>
+                  )}
                 </td>
                 <td className="p-4">
                   <p className="font-bold dark:text-white">{item.area}</p>
@@ -343,6 +350,15 @@ const Cases: React.FC<CasesProps> = ({ cases, setCases, clients, users }) => {
               )}
             </div>
 
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Parte Contrária</label>
+              <input
+                name="opposingParty"
+                defaultValue={editingCase?.opposingParty}
+                placeholder="Nome da parte adversa..."
+                className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white focus:ring-2 focus:ring-gold-800 outline-none"
+              />
+            </div>
             <div>
               <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Advogado Responsável</label>
               <select name="lawyerId" defaultValue={editingCase?.lawyerId} required className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white focus:ring-2 focus:ring-gold-800 outline-none">

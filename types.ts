@@ -338,6 +338,7 @@ export interface Case {
   title: string;
   clientId: string;
   clientName: string;
+  opposingParty?: string;   // Parte adversa / parte contrária
   area: string;
   court: string;
   status: CaseStatus;

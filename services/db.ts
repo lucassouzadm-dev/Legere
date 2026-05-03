@@ -111,6 +111,7 @@ function caseToDb(c: any) {
     id: c.id, cnj: c.cnj,
     title: c.lastMovement ?? c.title ?? null,
     client_id: c.clientId, client_name: c.clientName,
+    opposing_party: c.opposingParty ?? null,
     area: c.area, court: c.court ?? null, status: c.status,
     lawyer_id: c.lawyerId, value: c.value ?? 0,
     probability: c.probability ?? 50, risk: c.risk ?? 'MEDIUM',
@@ -122,6 +123,7 @@ function dbToCase(r: any) {
   return {
     id: r.id, cnj: r.cnj, lastMovement: r.title, title: r.title,
     clientId: r.client_id, clientName: r.client_name,
+    opposingParty: r.opposing_party ?? '',
     area: r.area, court: r.court, status: r.status, lawyerId: r.lawyer_id,
     value: Number(r.value ?? 0), probability: r.probability ?? 50,
     risk: r.risk, nextDeadline: r.next_deadline,
