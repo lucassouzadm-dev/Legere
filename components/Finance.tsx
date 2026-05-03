@@ -3,7 +3,9 @@ import React, { useState, useRef } from 'react';
 import Modal from './Modal';
 import { TransactionStatus, UserRole, Transaction } from '../types';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from 'recharts';
-import { getCurrentTenantId } from '../services/tenantService';
+import { getCurrentTenantId, getCurrentTenant } from '../services/tenantService';
+import { exportFinanceExcel } from '../services/exportService';
+import { uploadAttachment, openOrDownloadAttachment } from '../services/storageService';
 
 interface FinanceProps {
   transactions: Transaction[];
@@ -48,13 +50,15 @@ const Finance: React.FC<FinanceProps> = ({ transactions, setTransactions, users,
   const [reviewTx, setReviewTx] = useState<any>(null);
   const [txType, setTxType] = useState<'IN' | 'OUT'>('IN');
   const [isFuture, setIsFuture] = useState(false);
-  const [attachment, setAttachment] = useState<{ data: string, name: string } | null>(null);
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [activeTab, setActiveTab] = useState<'lancamentos' | 'futuro'>('lancamentos');
 
   // Estados para Filtro de Período
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth());
   const [filterYear, setFilterYear] = useState(new Date().getFullYear());
-  
+  const [exporting, setExporting] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const months = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
@@ -112,76 +116,44 @@ const Finance: React.FC<FinanceProps> = ({ transactions, setTransactions, users,
     }, [])
     .sort((a, b) => b.value - a.value);
 
-  const handleExportExcel = () => {
-    const revenues = filteredTransactions
-      .filter(t => t.type === 'IN')
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    
-    const expenses = filteredTransactions
-      .filter(t => t.type === 'OUT')
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-    const totalIn = revenues.reduce((acc, t) => acc + Number(t.amount), 0);
-    const totalOut = expenses.reduce((acc, t) => acc + Number(t.amount), 0);
-
-    const headers = ['Data', 'Descrição', 'Categoria', 'Responsável', 'Valor', 'Status'];
-    
-    const formatRow = (tx: Transaction) => [
-      new Date(tx.date + 'T00:00:00').toLocaleDateString('pt-BR'),
-      tx.description.replace(/;/g, ','),
-      tx.category,
-      users.find(u => u.id === tx.professionalId)?.name || tx.clientName || 'Escritório',
-      tx.amount.toFixed(2).replace('.', ','),
-      tx.status
-    ].join(';');
-
-    const csvContent = [
-      `RELATÓRIO FINANCEIRO Legere - ${months[filterMonth].toUpperCase()} / ${filterYear}`,
-      '',
-      '--- SEÇÃO DE RECEITAS ---',
-      headers.join(';'),
-      ...revenues.map(formatRow),
-      '',
-      '--- SEÇÃO DE DESPESAS ---',
-      headers.join(';'),
-      ...expenses.map(formatRow),
-      '',
-      '--- RESUMO FINANCEIRO CONSOLIDADO ---',
-      `RECEITA FINANCEIRA BRUTA; ; ; ;${totalIn.toFixed(2).replace('.', ',')}`,
-      `TOTAL DE DESPESAS; ; ; ;${totalOut.toFixed(2).replace('.', ',')}`,
-      `RESULTADO LÍQUIDO; ; ; ;${(totalIn - totalOut).toFixed(2).replace('.', ',')}`,
-      '',
-      `Relatório gerado em: ${new Date().toLocaleString('pt-BR')}`
-    ].join('\n');
-
-    const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.body.appendChild(document.createElement('a'));
-    link.href = url;
-    link.download = `Legere_Financeiro_${filterMonth + 1}_${filterYear}.csv`;
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+  const handleExportExcel = async () => {
+    setExporting(true);
+    try {
+      const tenant = getCurrentTenant();
+      const tenantName = tenant?.name ?? 'Escritório';
+      const period = `${months[filterMonth]}/${filterYear}`;
+      await exportFinanceExcel(filteredTransactions, tenantName, period);
+    } catch (error) {
+      console.error('Erro ao exportar Excel:', error);
+      alert('Erro ao exportar Excel. Tente novamente.');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setAttachment({
-        data: event.target?.result as string,
-        name: file.name
-      });
-    };
-    reader.readAsDataURL(file);
+    setAttachmentFile(file);
   };
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const type = formData.get('type') as 'IN' | 'OUT';
+
+    let finalAttachmentData: string | undefined = editingTx?.attachmentData;
+    let finalAttachmentName: string | undefined = editingTx?.attachmentName;
+
+    if (attachmentFile) {
+      setUploading(true);
+      const url = await uploadAttachment(attachmentFile, 'tx');
+      setUploading(false);
+      if (url) {
+        finalAttachmentData = url;
+        finalAttachmentName = attachmentFile.name;
+      }
+    }
 
     const newTx: Transaction = {
       id: editingTx?.id || Date.now().toString(),
@@ -192,9 +164,9 @@ const Finance: React.FC<FinanceProps> = ({ transactions, setTransactions, users,
       professionalId: formData.get('professionalId') as string,
       date: formData.get('date') as string,
       status: isFuture ? TransactionStatus.FUTURE : TransactionStatus.APPROVED,
-      hasAttachment: !!attachment || !!editingTx?.hasAttachment,
-      attachmentData: attachment?.data || editingTx?.attachmentData,
-      attachmentName: attachment?.name || editingTx?.attachmentName,
+      hasAttachment: !!(finalAttachmentData),
+      attachmentData: finalAttachmentData,
+      attachmentName: finalAttachmentName,
       tenantId: editingTx?.tenantId || getCurrentTenantId(),
     };
 
@@ -203,7 +175,7 @@ const Finance: React.FC<FinanceProps> = ({ transactions, setTransactions, users,
 
     setIsModalOpen(false);
     setEditingTx(null);
-    setAttachment(null);
+    setAttachmentFile(null);
     setIsFuture(false);
   };
 
@@ -215,10 +187,7 @@ const Finance: React.FC<FinanceProps> = ({ transactions, setTransactions, users,
 
   const handleDownloadAttachment = (tx: Transaction) => {
     if (!tx.attachmentData) return;
-    const link = document.createElement('a');
-    link.href = tx.attachmentData;
-    link.download = tx.attachmentName || 'comprovante.pdf';
-    link.click();
+    openOrDownloadAttachment(tx.attachmentData, tx.attachmentName || 'comprovante.pdf');
   };
 
   return (
@@ -247,12 +216,13 @@ const Finance: React.FC<FinanceProps> = ({ transactions, setTransactions, users,
             </select>
           </div>
 
-          <button 
+          <button
             onClick={handleExportExcel}
-            className="flex-1 md:flex-none px-5 py-2.5 bg-white dark:bg-slate-800 text-gray-700 dark:text-white border dark:border-slate-700 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-gray-50 transition-all flex items-center justify-center gap-2"
+            disabled={exporting || filteredTransactions.length === 0}
+            className="flex-1 md:flex-none px-5 py-2.5 bg-white dark:bg-slate-800 text-gray-700 dark:text-white border dark:border-slate-700 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-gray-50 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-            Exportar Planilha (XLS)
+            {exporting ? 'Gerando...' : '📊 Exportar Excel'}
           </button>
 
           <button 
@@ -531,7 +501,7 @@ const Finance: React.FC<FinanceProps> = ({ transactions, setTransactions, users,
                   >
                     <svg className="w-8 h-8 text-gray-300 group-hover:text-gold-800 mb-2 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
                     <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest group-hover:text-navy-800 dark:group-hover:text-white transition-colors">
-                      {attachment ? `Arquivo: ${attachment.name}` : (editingTx?.hasAttachment ? "Substituir Comprovante Atual" : "Anexar Nota ou Recibo")}
+                      {uploading ? 'Enviando...' : attachmentFile ? `Arquivo: ${attachmentFile.name}` : (editingTx?.hasAttachment ? "Substituir Comprovante Atual" : "Anexar Nota ou Recibo")}
                     </span>
                   </div>
                 </div>
@@ -539,9 +509,9 @@ const Finance: React.FC<FinanceProps> = ({ transactions, setTransactions, users,
           </div>
           
           <div className="flex justify-end gap-3 pt-6 border-t dark:border-slate-700">
-             <button type="button" onClick={() => { setIsModalOpen(false); setEditingTx(null); setAttachment(null); }} className="px-6 py-2 text-sm font-bold text-gray-400">Cancelar</button>
-             <button type="submit" className="px-10 py-3 bg-navy-800 text-white rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-gold-800 shadow-xl transition-all">
-                {editingTx ? "Atualizar Lançamento" : "Salvar Lançamento"}
+             <button type="button" onClick={() => { setIsModalOpen(false); setEditingTx(null); setAttachmentFile(null); }} className="px-6 py-2 text-sm font-bold text-gray-400">Cancelar</button>
+             <button type="submit" disabled={uploading} className="px-10 py-3 bg-navy-800 text-white rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-gold-800 shadow-xl transition-all disabled:opacity-60 disabled:cursor-wait">
+                {uploading ? 'Enviando comprovante...' : editingTx ? "Atualizar Lançamento" : "Salvar Lançamento"}
              </button>
           </div>
         </form>

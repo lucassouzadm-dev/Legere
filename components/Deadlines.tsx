@@ -1,6 +1,8 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { sendNotificationEmail } from '../services/notificationService';
+import { getCurrentTenant } from '../services/tenantService';
+import { exportDeadlinesPDF } from '../services/exportService';
 import Modal from './Modal';
 
 interface DeadlinesProps {
@@ -68,6 +70,7 @@ const Deadlines: React.FC<DeadlinesProps> = ({
   const [editingDeadline,   setEditingDeadline]    = useState<any | null>(null);
   const [viewingPub,        setViewingPub]         = useState<any | null>(null);
   const [responsibleSearch, setResponsibleSearch]  = useState('');
+  const [exporting,         setExporting]          = useState(false);
 
   // Autocomplete de Processo (formulário de criação)
   const [caseSearch,      setCaseSearch]      = useState('');
@@ -239,6 +242,21 @@ const Deadlines: React.FC<DeadlinesProps> = ({
     setCaseSearch('');
   };
 
+  // ── Exportar prazos para PDF ───────────────────────────────────────────────
+  const handleExportPDF = async () => {
+    setExporting(true);
+    try {
+      const tenant = getCurrentTenant();
+      const tenantName = tenant?.name ?? 'Escritório';
+      await exportDeadlinesPDF(deadlines, tenantName);
+    } catch (error) {
+      console.error('Erro ao exportar PDF:', error);
+      alert('Erro ao exportar PDF. Tente novamente.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   // ─────────────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6 animate-in zoom-in-95 duration-500">
@@ -256,6 +274,14 @@ const Deadlines: React.FC<DeadlinesProps> = ({
             title="Ir para o módulo de Publicações DJEN"
           >
             <IconNews /> Ver Publicações DJEN →
+          </button>
+          <button
+            onClick={handleExportPDF}
+            disabled={exporting || deadlines.length === 0}
+            className="bg-gold-800 text-white px-5 py-2 rounded-xl text-sm font-bold shadow-lg flex items-center gap-2 hover:bg-navy-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2m0 0v-8m0 8H3m9-8h0m0 0h6"/></svg>
+            {exporting ? 'Gerando...' : '📄 Exportar Prazos'}
           </button>
           <button
             onClick={() => setIsCreateOpen(true)}
