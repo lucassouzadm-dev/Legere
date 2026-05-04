@@ -392,46 +392,4 @@ const Cases: React.FC<CasesProps> = ({ cases, setCases, clients, users }) => {
             </div>
             <div>
               <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Advogado Responsável</label>
-              <select name="lawyerId" defaultValue={editingCase?.lawyerId} required className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white focus:ring-2 focus:ring-gold-800 outline-none">
-                {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Área</label>
-              <input name="area" defaultValue={editingCase?.area} required className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white" />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Tribunal / Vara</label>
-              <input name="court" defaultValue={editingCase?.court} placeholder="Ex: TJBA — 1ª Vara Cível de Salvador" className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white" />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Valor da Causa</label>
-              <input name="value" type="number" step="0.01" defaultValue={editingCase?.value} required className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm font-bold dark:text-white" />
-            </div>
-            <div className="col-span-2">
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Última Movimentação (Visível ao Cliente)</label>
-              <textarea name="lastMovement" defaultValue={editingCase?.lastMovement} rows={3} className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white" placeholder="Descreva o status atual para o cliente..."></textarea>
-            </div>
-            <div className="col-span-2">
-               <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Status Processual</label>
-               <select name="status" defaultValue={editingCase?.status || 'ONGOING'} className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white">
-                 <option value="ONGOING">Em Curso</option>
-                 <option value="SUSPENDED">Suspenso</option>
-                 <option value="ARCHIVED">Arquivado</option>
-                 <option value="WON">Vencido (Procedente)</option>
-                 <option value="LOST">Perdido (Improcedente)</option>
-                 <option value="SETTLEMENT">Acordo</option>
-               </select>
-            </div>
-          </div>
-          <div className="flex justify-end gap-3 mt-8">
-            <button type="button" onClick={handleClose} className="px-6 py-2 rounded-xl text-sm font-bold text-gray-400">Cancelar</button>
-            <button type="submit" className="px-8 py-2 bg-navy-800 text-white rounded-xl text-sm font-bold hover:bg-gold-800 transition-all">Salvar Processo</button>
-          </div>
-        </form>
-      </Modal>
-    </div>
-  );
-};
-
-export default Cases;
+              <select name="lawyerId" defaultValue={editingCase?.lawyerId} required className="w-full bg-gray-50 dark:bg-slate-900 border dark:bor

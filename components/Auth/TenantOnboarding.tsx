@@ -15,8 +15,11 @@ interface TenantOnboardingProps {
     adminPassword: string;
     oabNumber?: string;
     oabState?: string;
+    isTrial: boolean;
   }) => void;
   onBack: () => void;
+  /** 'trial' (padrão) = 7 dias Enterprise grátis | 'subscribe' = escolha de plano imediata */
+  initialMode?: 'trial' | 'subscribe';
 }
 
 const planColors: Record<PlanType, string> = {
@@ -30,21 +33,21 @@ const planBadge: Record<PlanType, string | null> = {
   [PlanType.ENTERPRISE]:   'Completo',
 };
 
-const TenantOnboarding: React.FC<TenantOnboardingProps> = ({ onComplete, onBack }) => {
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+const TenantOnboarding: React.FC<TenantOnboardingProps> = ({ onComplete, onBack, initialMode = 'trial' }) => {
+  // isTrial = true → 2 passos sem seleção de plano (Enterprise gratuito por 7 dias)
+  // isTrial = false → 3 passos com seleção de plano
+  const [isTrial, setIsTrial]     = useState(initialMode === 'trial');
+  const [step, setStep]           = useState<1 | 2 | 3>(1);
   const [selectedPlan, setSelectedPlan] = useState<PlanType>(PlanType.PROFISSIONAL);
 
   // Step 1 — dados do escritório
-  const [firmName, setFirmName]     = useState('');
-  const [slogan, setSlogan]         = useState('');
-  const [cnpj, setCnpj]             = useState('');
-  const [phone, setPhone]           = useState('');
-  const [firmEmail, setFirmEmail]   = useState('');
+  const [firmName, setFirmName]   = useState('');
+  const [slogan, setSlogan]       = useState('');
+  const [cnpj, setCnpj]           = useState('');
+  const [phone, setPhone]         = useState('');
+  const [firmEmail, setFirmEmail] = useState('');
 
-  // Step 2 — plano
-  // (selectedPlan já declarado)
-
-  // Step 3 — administrador
+  // Step admin (passo 2 no trial, passo 3 na assinatura)
   const [adminName, setAdminName]   = useState('');
   const [adminEmail, setAdminEmail] = useState('');
   const [adminPass, setAdminPass]   = useState('');
@@ -52,39 +55,45 @@ const TenantOnboarding: React.FC<TenantOnboardingProps> = ({ onComplete, onBack 
   const [oabNumber, setOabNumber]   = useState('');
   const [oabState, setOabState]     = useState('');
 
+  const totalSteps = isTrial ? 2 : 3;
+
   const handleStep1 = (e: React.FormEvent) => {
     e.preventDefault();
-    setStep(2);
+    setStep(isTrial ? 2 : 2); // em ambos os casos vai para step 2
   };
 
-  const handleStep3 = (e: React.FormEvent) => {
+  const handleAdminSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (adminPass !== adminPass2) { alert('As senhas não conferem.'); return; }
     if (adminPass.length < 8) { alert('A senha deve ter pelo menos 8 caracteres.'); return; }
     onComplete({
-      firmName, slogan, cnpj, phone, email: firmEmail, plan: selectedPlan,
+      firmName, slogan, cnpj, phone, email: firmEmail,
+      plan: isTrial ? PlanType.ENTERPRISE : selectedPlan,
       adminName, adminEmail, adminPassword: adminPass,
       oabNumber: oabNumber || undefined,
       oabState: oabState || undefined,
+      isTrial,
     });
+  };
+
+  // Mudar para modo "assinar agora"
+  const switchToSubscribe = () => {
+    setIsTrial(false);
+    setStep(1);
+  };
+
+  // Voltar para modo trial
+  const switchToTrial = () => {
+    setIsTrial(true);
+    setStep(1);
   };
 
   const planList: PlanType[] = [PlanType.ESSENCIAL, PlanType.PROFISSIONAL, PlanType.ENTERPRISE];
 
-  const featureRow = (label: string, essencial: string | boolean, prof: string | boolean, ent: string | boolean) => {
-    const fmt = (v: string | boolean) =>
-      typeof v === 'boolean'
-        ? v ? <span className="text-green-600 font-bold">✓</span> : <span className="text-gray-300">—</span>
-        : <span className="text-sm text-gray-700 dark:text-gray-300">{v}</span>;
-    return (
-      <tr className="border-b dark:border-slate-700">
-        <td className="py-2 pr-4 text-sm text-gray-600 dark:text-gray-400">{label}</td>
-        <td className="py-2 text-center">{fmt(essencial)}</td>
-        <td className="py-2 text-center">{fmt(prof)}</td>
-        <td className="py-2 text-center">{fmt(ent)}</td>
-      </tr>
-    );
-  };
+  // Labels dos passos conforme o modo
+  const stepLabels = isTrial
+    ? ['Escritório', 'Administrador']
+    : ['Escritório', 'Plano', 'Administrador'];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-navy-900 via-navy-800 to-navy-700 flex items-center justify-center p-4">
@@ -100,87 +109,130 @@ const TenantOnboarding: React.FC<TenantOnboardingProps> = ({ onComplete, onBack 
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {[1, 2, 3].map(s => (
-              <div key={s} className={`flex items-center gap-2 ${s < 3 ? 'after:content-["→"] after:text-navy-400 after:ml-2' : ''}`}>
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold
-                  ${step >= s ? 'bg-gold-800 text-white' : 'bg-navy-700 text-navy-400'}`}>
-                  {s}
+            {stepLabels.map((label, i) => {
+              const s = i + 1;
+              return (
+                <div key={s} className={`flex items-center gap-2 ${s < totalSteps ? 'after:content-["→"] after:text-navy-400 after:ml-2' : ''}`}>
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold
+                    ${step >= s ? 'bg-gold-800 text-white' : 'bg-navy-700 text-navy-400'}`}>
+                    {s}
+                  </div>
+                  <span className={`text-[10px] font-bold uppercase tracking-widest hidden md:inline
+                    ${step >= s ? 'text-white' : 'text-navy-400'}`}>
+                    {label}
+                  </span>
                 </div>
-                <span className={`text-[10px] font-bold uppercase tracking-widest hidden md:inline
-                  ${step >= s ? 'text-white' : 'text-navy-400'}`}>
-                  {s === 1 ? 'Escritório' : s === 2 ? 'Plano' : 'Admin'}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
         <div className="p-8">
 
-          {/* Step 1 — Dados do Escritório */}
+          {/* ── Step 1 — Dados do Escritório ────────────────────────────────── */}
           {step === 1 && (
-            <form onSubmit={handleStep1} className="space-y-6 max-w-lg mx-auto">
-              <div>
-                <h2 className="text-2xl font-serif font-bold text-navy-800 dark:text-white mb-1">Cadastre seu Escritório</h2>
-                <p className="text-sm text-gray-500">Estas informações identificam seu escritório na plataforma.</p>
-              </div>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Nome do Escritório *</label>
-                  <input required value={firmName} onChange={e => setFirmName(e.target.value)}
-                    placeholder="Ex: Silva & Associados Advogados"
-                    className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white focus:ring-2 focus:ring-gold-800 outline-none" />
+            <div className="space-y-6">
+
+              {/* Banner trial ou assinatura */}
+              {isTrial ? (
+                <div className="flex items-start gap-4 p-5 bg-gradient-to-r from-gold-800/10 to-amber-50 dark:from-gold-800/20 dark:to-slate-900 rounded-2xl border border-gold-800/30">
+                  <div className="text-3xl">🎁</div>
+                  <div className="flex-1">
+                    <p className="font-bold text-navy-800 dark:text-white text-sm">
+                      7 dias grátis com o Legere Enterprise completo
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
+                      Sem cartão de crédito. Sem letras miúdas. Por nossa conta e risco — se não gostar, não paga nada.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={switchToSubscribe}
+                    className="text-[10px] font-bold text-gold-800 hover:text-navy-800 dark:hover:text-white uppercase tracking-widest whitespace-nowrap transition-colors mt-1"
+                  >
+                    Já conheço →
+                  </button>
                 </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">
-                    Slogan do Escritório
-                    <span className="ml-2 text-gray-300 normal-case font-normal">— aparece no topo do painel</span>
-                  </label>
-                  <input
-                    value={slogan}
-                    onChange={e => setSlogan(e.target.value)}
-                    placeholder="Ex: Advocacia séria, resultado garantido."
-                    maxLength={120}
-                    className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white focus:ring-2 focus:ring-gold-800 outline-none italic"
-                  />
-                  <p className="text-[10px] text-gray-400 mt-1">Opcional. Pode ser alterado a qualquer momento nas Configurações.</p>
+              ) : (
+                <div className="flex items-start gap-4 p-5 bg-navy-50 dark:bg-slate-900/50 rounded-2xl border dark:border-slate-700">
+                  <div className="text-3xl">⭐</div>
+                  <div className="flex-1">
+                    <p className="font-bold text-navy-800 dark:text-white text-sm">Modo: Assinatura imediata</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Você escolherá o plano no próximo passo.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={switchToTrial}
+                    className="text-[10px] font-bold text-navy-800 dark:text-gold-800 hover:underline uppercase tracking-widest whitespace-nowrap mt-1"
+                  >
+                    ← Quero testar grátis
+                  </button>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+              )}
+
+              <form onSubmit={handleStep1} className="space-y-6 max-w-lg mx-auto">
+                <div>
+                  <h2 className="text-2xl font-serif font-bold text-navy-800 dark:text-white mb-1">Cadastre seu Escritório</h2>
+                  <p className="text-sm text-gray-500">Estas informações identificam seu escritório na plataforma.</p>
+                </div>
+                <div className="space-y-4">
                   <div>
-                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">CNPJ</label>
-                    <input value={cnpj} onChange={e => setCnpj(e.target.value)}
-                      placeholder="00.000.000/0001-00"
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Nome do Escritório *</label>
+                    <input required value={firmName} onChange={e => setFirmName(e.target.value)}
+                      placeholder="Ex: Silva & Associados Advogados"
                       className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white focus:ring-2 focus:ring-gold-800 outline-none" />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Telefone</label>
-                    <input value={phone} onChange={e => setPhone(e.target.value)}
-                      placeholder="(00) 00000-0000"
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">
+                      Slogan do Escritório
+                      <span className="ml-2 text-gray-300 normal-case font-normal">— aparece no topo do painel</span>
+                    </label>
+                    <input
+                      value={slogan}
+                      onChange={e => setSlogan(e.target.value)}
+                      placeholder="Ex: Advocacia séria, resultado garantido."
+                      maxLength={120}
+                      className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white focus:ring-2 focus:ring-gold-800 outline-none italic"
+                    />
+                    <p className="text-[10px] text-gray-400 mt-1">Opcional. Pode ser alterado a qualquer momento nas Configurações.</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">CNPJ</label>
+                      <input value={cnpj} onChange={e => setCnpj(e.target.value)}
+                        placeholder="00.000.000/0001-00"
+                        className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white focus:ring-2 focus:ring-gold-800 outline-none" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Telefone</label>
+                      <input value={phone} onChange={e => setPhone(e.target.value)}
+                        placeholder="(00) 00000-0000"
+                        className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white focus:ring-2 focus:ring-gold-800 outline-none" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">E-mail do Escritório *</label>
+                    <input required type="email" value={firmEmail} onChange={e => setFirmEmail(e.target.value)}
+                      placeholder="contato@seuescritorio.com.br"
                       className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white focus:ring-2 focus:ring-gold-800 outline-none" />
                   </div>
                 </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">E-mail do Escritório *</label>
-                  <input required type="email" value={firmEmail} onChange={e => setFirmEmail(e.target.value)}
-                    placeholder="contato@seuescritorio.com.br"
-                    className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white focus:ring-2 focus:ring-gold-800 outline-none" />
+                <div className="flex gap-3 pt-4">
+                  <button type="button" onClick={onBack}
+                    className="px-6 py-3 rounded-xl text-sm font-bold text-gray-400 hover:text-gray-600 border dark:border-slate-700 dark:text-slate-400 transition-colors">
+                    ← Voltar ao Login
+                  </button>
+                  <button type="submit"
+                    className="flex-1 bg-navy-800 text-white py-3 rounded-xl text-sm font-bold uppercase tracking-widest hover:bg-gold-800 transition-all shadow-lg">
+                    Próximo →
+                  </button>
                 </div>
-              </div>
-              <div className="flex gap-3 pt-4">
-                <button type="button" onClick={onBack}
-                  className="px-6 py-3 rounded-xl text-sm font-bold text-gray-400 hover:text-gray-600 border dark:border-slate-700 dark:text-slate-400 transition-colors">
-                  ← Voltar ao Login
-                </button>
-                <button type="submit"
-                  className="flex-1 bg-navy-800 text-white py-3 rounded-xl text-sm font-bold uppercase tracking-widest hover:bg-gold-800 transition-all shadow-lg">
-                  Próximo →
-                </button>
-              </div>
-            </form>
+              </form>
+            </div>
           )}
 
-          {/* Step 2 — Plano */}
-          {step === 2 && (
+          {/* ── Step 2 (modo assinatura) — Escolha de Plano ─────────────────── */}
+          {step === 2 && !isTrial && (
             <div className="space-y-6">
               <div className="text-center">
                 <h2 className="text-2xl font-serif font-bold text-navy-800 dark:text-white mb-1">Escolha seu Plano</h2>
@@ -237,9 +289,22 @@ const TenantOnboarding: React.FC<TenantOnboardingProps> = ({ onComplete, onBack 
             </div>
           )}
 
-          {/* Step 3 — Administrador */}
-          {step === 3 && (
-            <form onSubmit={handleStep3} className="space-y-6 max-w-lg mx-auto">
+          {/* ── Step 2 (trial) ou Step 3 (assinatura) — Administrador ────────── */}
+          {((step === 2 && isTrial) || (step === 3 && !isTrial)) && (
+            <form onSubmit={handleAdminSubmit} className="space-y-6 max-w-lg mx-auto">
+
+              {/* Resumo do que o usuário está prestes a criar */}
+              {isTrial && (
+                <div className="flex items-center gap-3 p-4 bg-green-50 dark:bg-green-900/20 rounded-2xl border border-green-200 dark:border-green-700">
+                  <svg className="w-5 h-5 text-green-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"/>
+                  </svg>
+                  <p className="text-sm text-green-800 dark:text-green-300">
+                    <strong>Legere Enterprise por 7 dias grátis</strong> — sem cartão, sem letras miúdas.
+                  </p>
+                </div>
+              )}
+
               <div>
                 <h2 className="text-2xl font-serif font-bold text-navy-800 dark:text-white mb-1">Criar Conta de Administrador</h2>
                 <p className="text-sm text-gray-500">O administrador terá acesso total e poderá convidar os demais membros da equipe.</p>
@@ -254,60 +319,4 @@ const TenantOnboarding: React.FC<TenantOnboardingProps> = ({ onComplete, onBack 
                 <div>
                   <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">E-mail de Acesso *</label>
                   <input required type="email" value={adminEmail} onChange={e => setAdminEmail(e.target.value)}
-                    placeholder="admin@seuescritorio.com.br"
-                    className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white focus:ring-2 focus:ring-gold-800 outline-none" />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">OAB Nº</label>
-                    <input value={oabNumber} onChange={e => setOabNumber(e.target.value)}
-                      placeholder="Ex: 123456"
-                      className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white focus:ring-2 focus:ring-gold-800 outline-none font-mono" />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">OAB UF</label>
-                    <select value={oabState} onChange={e => setOabState(e.target.value)}
-                      className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white focus:ring-2 focus:ring-gold-800 outline-none">
-                      <option value="">Selecione</option>
-                      {BRAZIL_STATES.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Senha *</label>
-                  <input required type="password" value={adminPass} onChange={e => setAdminPass(e.target.value)}
-                    placeholder="Mínimo 8 caracteres"
-                    className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white focus:ring-2 focus:ring-gold-800 outline-none" />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Confirmar Senha *</label>
-                  <input required type="password" value={adminPass2} onChange={e => setAdminPass2(e.target.value)}
-                    placeholder="Repita a senha"
-                    className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white focus:ring-2 focus:ring-gold-800 outline-none" />
-                </div>
-              </div>
-              <div className="flex gap-3 pt-4">
-                <button type="button" onClick={() => setStep(2)}
-                  className="px-6 py-3 rounded-xl text-sm font-bold text-gray-400 hover:text-gray-600 border dark:border-slate-700 transition-colors">
-                  ← Voltar
-                </button>
-                <button type="submit"
-                  className="flex-1 bg-gold-800 text-white py-3 rounded-xl text-sm font-bold uppercase tracking-widest hover:bg-navy-800 transition-all shadow-lg">
-                  🚀 Criar Escritório no Legere
-                </button>
-              </div>
-            </form>
-          )}
-        </div>
-
-        <div className="px-8 py-4 border-t dark:border-slate-700 text-center">
-          <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">
-            ⚡ 7 dias grátis para testar — sem necessidade de cartão de crédito &nbsp;|&nbsp; Conforme LGPD (Lei 13.709/18)
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export default TenantOnboarding;
+                 

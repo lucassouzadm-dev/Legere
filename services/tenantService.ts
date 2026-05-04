@@ -175,17 +175,47 @@ export const tenantsDb = {
 
   async update(id: string, fields: Partial<Tenant>): Promise<void> {
     const payload: any = {};
-    if (fields.name   !== undefined) payload.name     = fields.name;
-    if (fields.slogan !== undefined) payload.slogan   = fields.slogan ?? null;
-    if (fields.plan)                 payload.plan     = fields.plan;
-    if (fields.phone  !== undefined) payload.phone    = fields.phone ?? null;
-    if (fields.cnpj   !== undefined) payload.cnpj     = fields.cnpj ?? null;
-    if (fields.logoUrl)              payload.logo_url = fields.logoUrl;
-    if (fields.active !== undefined) payload.active   = fields.active;
+    if (fields.name        !== undefined) payload.name          = fields.name;
+    if (fields.slogan      !== undefined) payload.slogan        = fields.slogan ?? null;
+    if (fields.plan)                      payload.plan          = fields.plan;
+    if (fields.phone       !== undefined) payload.phone         = fields.phone ?? null;
+    if (fields.cnpj        !== undefined) payload.cnpj          = fields.cnpj ?? null;
+    if (fields.logoUrl)                   payload.logo_url      = fields.logoUrl;
+    if (fields.active      !== undefined) payload.active        = fields.active;
+    if (fields.trialEndsAt !== undefined) payload.trial_ends_at = fields.trialEndsAt ?? null;
     const { error } = await supabase.from('tenants').update(payload).eq('id', id);
     if (error) console.error('[tenantsDb] update error:', error);
   },
 };
+
+// ─── Helpers de trial ────────────────────────────────────────────────────────
+
+/**
+ * Retorna true se o tenant está em período de teste (trial_ends_at no futuro).
+ */
+export function isTrial(tenant: Tenant | null): boolean {
+  if (!tenant?.trialEndsAt) return false;
+  return new Date(tenant.trialEndsAt) > new Date();
+}
+
+/**
+ * Retorna true se o trial expirou E o tenant não tem plano pago confirmado.
+ * Um tenant nunca bloqueado = trialEndsAt ausente (cliente pagante sem trial).
+ */
+export function isTrialExpired(tenant: Tenant | null): boolean {
+  if (!tenant) return false;
+  if (!tenant.trialEndsAt) return false; // sem trial = assinante ativo
+  return new Date(tenant.trialEndsAt) < new Date();
+}
+
+/**
+ * Quantos dias restam no trial (negativo = expirado).
+ */
+export function trialDaysLeft(tenant: Tenant | null): number {
+  if (!tenant?.trialEndsAt) return Infinity;
+  const diff = new Date(tenant.trialEndsAt).getTime() - Date.now();
+  return Math.ceil(diff / (1000 * 60 * 60 * 24));
+}
 
 function dbToTenant(r: any): Tenant {
   return {

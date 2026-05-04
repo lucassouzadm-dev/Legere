@@ -760,38 +760,4 @@ const Deadlines: React.FC<DeadlinesProps> = ({
               </pre>
             </div>
 
-            {/* Aviso quando a publicação não está mais disponível localmente */}
-            {viewingPub._noLink && (
-              <p className="text-[10px] text-amber-600 dark:text-amber-400 italic">
-                ℹ️ Esta publicação foi criada antes do vínculo automático. O conteúdo exibido é o resumo salvo no momento da criação do prazo.
-              </p>
-            )}
-
-            {/* Ação: ir para publicações */}
-            <div className="flex justify-end gap-3">
-              {!viewingPub._noLink && onNavigateToPublications && (
-                <button
-                  type="button"
-                  onClick={() => { setIsPublicationOpen(false); onNavigateToPublications(); }}
-                  className="px-5 py-2 bg-gold-800 text-white rounded-lg text-sm font-bold hover:bg-navy-800 transition-all flex items-center gap-2"
-                >
-                  <IconNews /> Ver no módulo de Publicações →
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => { setIsPublicationOpen(false); setViewingPub(null); }}
-                className="px-5 py-2 rounded-lg text-sm font-bold text-gray-500 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
-              >
-                Fechar
-              </button>
-            </div>
-          </div>
-        )}
-      </Modal>
-
-    </div>
-  );
-};
-
-export default Deadlines;
+            {/* Aviso quando a

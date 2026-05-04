@@ -28,7 +28,7 @@ import {
   publicationsDb,
 } from './services/db';
 import { hearingsDb } from './services/db';
-import { tenantsDb, setCurrentTenant, getCurrentTenant, getCurrentTenantId, clearCurrentTenant } from './services/tenantService';
+import { tenantsDb, setCurrentTenant, getCurrentTenant, getCurrentTenantId, clearCurrentTenant, isTrialExpired, isTrial, trialDaysLeft } from './services/tenantService';
 import { authService } from './services/authService';
 import { loadPermissions, canViewFinancials, allowedModules } from './services/permissionsService';
 import { TenantRolePermissions } from './types';
@@ -51,6 +51,8 @@ const App: React.FC = () => {
   // Convite: tenant carregado via ?t= na URL (sem autenticação ainda)
   const [inviteTenant, setInviteTenant] = useState<Tenant | null>(null);
   const [signUpSuccess, setSignUpSuccess] = useState(false);
+  /** 'trial' = onboarding grátis 7 dias | 'subscribe' = escolha de plano imediata */
+  const [onboardingMode, setOnboardingMode] = useState<'trial' | 'subscribe'>('trial');
   const [activeModule, setActiveModule] = useState('dashboard');
   const [isDarkMode, setIsDarkMode]     = useState(false);
   const [rolePerms, setRolePerms]       = useState<TenantRolePermissions | null>(null);
@@ -566,14 +568,26 @@ const App: React.FC = () => {
   const handleOnboardingComplete = useCallback(async (data: any) => {
     const adminEmail = data.adminEmail || data.email;
 
+    // Trial: força Enterprise + define data de expiração em 7 dias
+    const finalPlan    = data.isTrial ? PlanType.ENTERPRISE : data.plan;
+    const trialEndsAt  = data.isTrial
+      ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+      : undefined;
+
     // Cria tenant
     const newTenant = await tenantsDb.create({
       name: data.firmName,
       slogan: data.slogan || undefined,
       cnpj: data.cnpj, phone: data.phone,
-      email: data.email, plan: data.plan, active: true,
+      email: data.email, plan: finalPlan, active: true,
     });
     if (!newTenant) { alert('Erro ao criar escritório. Tente novamente.'); return; }
+
+    // Salva a data de expiração do trial no banco
+    if (trialEndsAt) {
+      await tenantsDb.update(newTenant.id, { trialEndsAt });
+      newTenant.trialEndsAt = trialEndsAt;
+    }
 
     setCurrentTenant(newTenant);
     setTenant(newTenant);
@@ -772,7 +786,11 @@ const App: React.FC = () => {
   // ── Onboarding ────────────────────────────────────────────────────────────
 
   if (authState === 'ONBOARDING') return (
-    <TenantOnboarding onComplete={handleOnboardingComplete} onBack={() => setAuthState('NONE')} />
+    <TenantOnboarding
+      onComplete={handleOnboardingComplete}
+      onBack={() => setAuthState('NONE')}
+      initialMode={onboardingMode}
+    />
   );
 
   // ── Confirmação de cadastro via convite ──────────────────────────────────
@@ -803,11 +821,74 @@ const App: React.FC = () => {
         onLogin={handleLogin}
         onSignUp={handleSignUp}
         onClientLogin={handleClientLogin}
-        onRegisterFirm={() => setAuthState('ONBOARDING')}
+        onRegisterFirm={() => { setOnboardingMode('trial'); setAuthState('ONBOARDING'); }}
+        onSubscribeNow={() => { setOnboardingMode('subscribe'); setAuthState('ONBOARDING'); }}
         inviteTenant={inviteTenant}
       />
     </div>
   );
+
+  // ── Trial: verificação de expiração ──────────────────────────────────────
+  // Bloqueia apenas usuários STAFF logados; CLIENT (portal) nunca é bloqueado.
+  if (authState === 'STAFF' && isTrialExpired(tenant)) {
+    const daysExpired = Math.abs(trialDaysLeft(tenant));
+    return (
+      <div className={`min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-navy-900 via-navy-800 to-navy-700 ${isDarkMode ? 'dark' : ''}`}>
+        <div className="w-full max-w-lg bg-white dark:bg-slate-800 rounded-[2rem] shadow-2xl p-10 text-center space-y-6 border dark:border-slate-700 animate-in fade-in zoom-in-95 duration-500">
+          <div className="w-20 h-20 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center mx-auto text-5xl">⏰</div>
+
+          <div>
+            <h2 className="text-2xl font-bold font-serif text-navy-800 dark:text-white">Período de Teste Encerrado</h2>
+            <p className="text-gray-500 dark:text-gray-400 text-sm mt-2">
+              {daysExpired > 0
+                ? `Seu trial gratuito de 7 dias expirou há ${daysExpired} dia${daysExpired > 1 ? 's' : ''}.`
+                : 'Seu trial gratuito de 7 dias expirou hoje.'}
+            </p>
+          </div>
+
+          <div className="bg-gray-50 dark:bg-slate-700 rounded-2xl p-4 text-left space-y-2">
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Seus dados estão seguros</p>
+            {[
+              'Todos os processos e clientes cadastrados',
+              'Prazos, audiências e tarefas',
+              'Histórico financeiro e documentos',
+              'Conversas e notificações',
+            ].map(item => (
+              <div key={item} className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                <svg className="w-4 h-4 text-green-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"/>
+                </svg>
+                {item}
+              </div>
+            ))}
+          </div>
+
+          <div className="space-y-3">
+            <button
+              onClick={() => { setOnboardingMode('subscribe'); setAuthState('ONBOARDING'); }}
+              className="w-full bg-gold-800 hover:bg-amber-500 text-white font-bold py-4 rounded-2xl text-sm uppercase tracking-widest transition-all shadow-lg shadow-gold-800/30"
+            >
+              🚀 Assinar o Legere — continuar com meus dados
+            </button>
+            <button
+              onClick={handleLogout}
+              className="w-full bg-transparent border border-gray-200 dark:border-slate-600 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 font-medium py-3 rounded-2xl text-xs transition-all"
+            >
+              Sair da conta
+            </button>
+          </div>
+
+          <p className="text-[11px] text-gray-400 dark:text-gray-500">
+            Dúvidas? Entre em contato: <a href="mailto:suporte@legere.com.br" className="text-gold-800 hover:underline">suporte@legere.com.br</a>
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Trial: banner ativo ───────────────────────────────────────────────────
+  const trialActive = authState === 'STAFF' && isTrial(tenant);
+  const daysLeft    = trialActive ? trialDaysLeft(tenant) : 0;
 
   // ── App principal ─────────────────────────────────────────────────────────
 
@@ -827,6 +908,22 @@ const App: React.FC = () => {
       showWhatsAppCRM={features.whatsappIntegration}
       allowedModules={allowedMods.length > 0 ? allowedMods : undefined}
     >
+      {/* Banner de trial ativo */}
+      {trialActive && (
+        <div className={`flex items-center justify-between px-4 py-2 text-xs font-semibold ${daysLeft <= 1 ? 'bg-red-500' : daysLeft <= 3 ? 'bg-amber-500' : 'bg-amber-400'} text-white`}>
+          <span>
+            ⏳ Trial gratuito: <strong>{daysLeft <= 0 ? 'último dia!' : `${daysLeft} dia${daysLeft > 1 ? 's' : ''} restante${daysLeft > 1 ? 's' : ''}`}</strong>
+            {' '}— acesso completo ao Legere Enterprise.
+          </span>
+          <button
+            onClick={() => { setOnboardingMode('subscribe'); setAuthState('ONBOARDING'); }}
+            className="ml-4 bg-white/20 hover:bg-white/30 rounded-lg px-3 py-1 text-[11px] uppercase tracking-widest transition-all font-bold shrink-0"
+          >
+            Assinar agora →
+          </button>
+        </div>
+      )}
+
       {authState === 'CLIENT' ? (
         <ClientPortal
           client={currentUser}

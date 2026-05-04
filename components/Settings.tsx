@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import Modal from './Modal';
 import { UserRole, UserStatus, PlanType, PLAN_FEATURES, PLAN_PRICES, PLAN_LABELS, Tenant } from '../types';
+import { getAiUsage, getCurrentTenantId, isTrial, trialDaysLeft } from '../services/tenantService';
 import { BRAZIL_STATES } from '../constants';
 import IntegrationSettings from './IntegrationSettings';
 import PermissionsSettings from './PermissionsSettings';
@@ -416,20 +417,76 @@ const Settings: React.FC<SettingsProps> = ({ users, setUsers, clients, currentUs
           )}
 
           {/* ── Meu Plano ───────────────────────────────────────────────────── */}
-          {activeTab === 'plano' && (
+          {activeTab === 'plano' && (() => {
+            const tenantId   = getCurrentTenantId();
+            const aiUsage    = getAiUsage(tenantId);
+            const aiLimit    = features.aiMonthlyLimit;
+            const aiPct      = aiLimit > 0 ? Math.min(100, (aiUsage.count / aiLimit) * 100) : 0;
+            const trialOn    = isTrial(tenant);
+            const daysLeft   = trialOn ? trialDaysLeft(tenant) : 0;
+            return (
             <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border dark:border-slate-700 shadow-sm space-y-8">
               <div>
                 <h3 className="font-bold text-xl dark:text-white mb-1">Plano Atual</h3>
                 <p className="text-sm text-gray-500">Gerencie a assinatura do escritório.</p>
               </div>
+
+              {/* Banner trial ativo */}
+              {trialOn && (
+                <div className={`flex items-center gap-4 p-5 rounded-2xl border
+                  ${daysLeft <= 2
+                    ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700'
+                    : 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700'}`}>
+                  <div className="text-3xl">🎁</div>
+                  <div>
+                    <p className={`font-bold text-sm ${daysLeft <= 2 ? 'text-red-700 dark:text-red-300' : 'text-amber-800 dark:text-amber-300'}`}>
+                      {daysLeft <= 0 ? 'Último dia de teste gratuito!' : `Período de teste: ${daysLeft} ${daysLeft === 1 ? 'dia restante' : 'dias restantes'}`}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      Você está usando o Legere Enterprise completo gratuitamente. Assine para continuar após o trial.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center gap-4 p-6 bg-navy-50 dark:bg-slate-900/50 rounded-2xl border dark:border-slate-700">
                 <div className="w-16 h-16 bg-navy-800 rounded-2xl flex items-center justify-center text-gold-800 text-2xl font-black shadow-lg">⭐</div>
                 <div>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Plano Ativo</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+                    {trialOn ? 'Trial Ativo' : 'Plano Ativo'}
+                  </p>
                   <p className="text-3xl font-bold text-navy-800 dark:text-white">{PLAN_LABELS[currentPlan]}</p>
-                  <p className="text-gold-800 font-bold">R$ {PLAN_PRICES[currentPlan]}/mês</p>
+                  <p className="text-gold-800 font-bold">
+                    {trialOn ? `Grátis por mais ${Math.max(0, daysLeft)} ${daysLeft === 1 ? 'dia' : 'dias'}` : `R$ ${PLAN_PRICES[currentPlan]}/mês`}
+                  </p>
                 </div>
               </div>
+
+              {/* Uso de IA do mês */}
+              {aiLimit !== 0 && (
+                <div className="p-5 bg-gray-50 dark:bg-slate-900/50 rounded-2xl border dark:border-slate-700 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-bold text-gray-700 dark:text-gray-300">🤖 Uso de IA — {aiUsage.monthKey}</p>
+                    <p className={`text-sm font-bold ${aiPct >= 90 ? 'text-red-600' : aiPct >= 70 ? 'text-amber-600' : 'text-green-600'}`}>
+                      {aiLimit === -1 ? `${aiUsage.count} requisições (ilimitado)` : `${aiUsage.count} / ${aiLimit} requisições`}
+                    </p>
+                  </div>
+                  {aiLimit !== -1 && (
+                    <div className="h-2.5 bg-gray-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-700
+                          ${aiPct >= 90 ? 'bg-red-500' : aiPct >= 70 ? 'bg-amber-500' : 'bg-green-500'}`}
+                        style={{ width: `${aiPct}%` }}
+                      />
+                    </div>
+                  )}
+                  {aiLimit !== -1 && (
+                    <p className="text-[10px] text-gray-400">
+                      {aiLimit === -1 ? 'Uso ilimitado incluso no seu plano.' : `Renova em 1º do próximo mês. Restam ${Math.max(0, aiLimit - aiUsage.count)} requisições.`}
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {[
                   ['👥 Usuários', features.maxUsers === -1 ? 'Ilimitados' : `Até ${features.maxUsers}`],
@@ -457,7 +514,7 @@ const Settings: React.FC<SettingsProps> = ({ users, setUsers, clients, currentUs
                 </div>
               )}
             </div>
-          )}
+          );})()}
 
           {/* ── Controle de Acesso ───────────────────────────────────────────── */}
           {activeTab === 'permissoes' && (
@@ -508,56 +565,4 @@ const Settings: React.FC<SettingsProps> = ({ users, setUsers, clients, currentUs
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
               <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Nome Completo</label>
-              <input name="name" defaultValue={editingUser?.name} required className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white" />
-            </div>
-            <div className="col-span-2">
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">E-mail</label>
-              <input name="email" type="email" defaultValue={editingUser?.email} required className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white" />
-            </div>
-            <div className="col-span-2">
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Senha</label>
-              <input name="password" type="password" placeholder={editingUser?.id ? 'Em branco = manter atual' : 'Mínimo 6 caracteres'} required={!editingUser?.id}
-                className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white focus:ring-2 focus:ring-gold-800 outline-none" />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Função</label>
-              <select name="role" defaultValue={editingUser?.role || UserRole.LAWYER}
-                className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white">
-                <option value={UserRole.LAWYER}>Advogado(a)</option>
-                <option value={UserRole.ADMIN}>Administrador</option>
-                <option value={UserRole.INTERN}>Estagiário(a)</option>
-                <option value={UserRole.RECEPTION}>Secretária</option>
-                <option value={UserRole.FINANCE}>Financeiro</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Meta Mensal (R$)</label>
-              <input name="monthlyGoal" type="number" step="0.01" defaultValue={editingUser?.monthlyGoal}
-                className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white" />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">OAB Nº</label>
-              <input name="oabNumber" defaultValue={editingUser?.oabNumber || ''}
-                placeholder="Ex: 123456"
-                className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white font-mono focus:ring-2 focus:ring-gold-800 outline-none" />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">OAB UF</label>
-              <select name="oabState" defaultValue={editingUser?.oabState || ''}
-                className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white focus:ring-2 focus:ring-gold-800 outline-none">
-                <option value="">— Selecione —</option>
-                {BRAZIL_STATES.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="flex justify-end gap-3 mt-6">
-            <button type="button" onClick={() => setIsModalOpen(false)} className="px-6 py-2 rounded-xl text-sm font-bold text-gray-400">Cancelar</button>
-            <button type="submit" className="px-8 py-2 bg-navy-800 text-white rounded-xl text-sm font-bold hover:bg-gold-800 transition-all uppercase tracking-widest text-[10px]">Salvar</button>
-          </div>
-        </form>
-      </Modal>
-    </div>
-  );
-};
-
-export default Settings;
+              <input name="name" defaultValue={edi

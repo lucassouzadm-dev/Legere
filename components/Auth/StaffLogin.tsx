@@ -7,11 +7,13 @@ interface StaffLoginProps {
   onSignUp: (name: string, email: string, role: UserRole, password: string, oabNumber?: string, oabState?: string) => void;
   onClientLogin: (document: string, password: string) => void;
   onRegisterFirm: () => void;
+  /** Abre o onboarding direto no modo assinatura (sem trial) */
+  onSubscribeNow?: () => void;
   /** Quando presente, o usuário acessou via link de convite de um escritório */
   inviteTenant?: Tenant | null;
 }
 
-const StaffLogin: React.FC<StaffLoginProps> = ({ onLogin, onSignUp, onClientLogin, onRegisterFirm, inviteTenant }) => {
+const StaffLogin: React.FC<StaffLoginProps> = ({ onLogin, onSignUp, onClientLogin, onRegisterFirm, onSubscribeNow, inviteTenant }) => {
   // Se vier de link de convite, começa direto no formulário de cadastro
   const [view, setView] = useState<'LOGIN' | 'SIGNUP' | 'CLIENT'>(inviteTenant ? 'SIGNUP' : 'LOGIN');
   const [email, setEmail]           = useState('');
@@ -43,31 +45,66 @@ const StaffLogin: React.FC<StaffLoginProps> = ({ onLogin, onSignUp, onClientLogi
           </svg>
         </div>
         <div className="relative z-10">
-          <div className="flex items-center gap-3 mb-12">
+          <div className="flex items-center gap-3 mb-10">
             <Logo className="w-12 h-12" />
             <div>
               <h1 className="font-serif font-bold text-xl tracking-widest uppercase">{APP_NAME}</h1>
               <p className="text-[10px] text-navy-300 uppercase tracking-[0.2em]">{APP_TAGLINE}</p>
             </div>
           </div>
-          <h2 className="text-4xl font-serif font-bold leading-tight mb-6">
-            Gestão Jurídica de <span className="text-gold-800 underline decoration-gold-800/30">Alta Performance</span>
+
+          <h2 className="text-3xl font-serif font-bold leading-tight mb-4">
+            Confiamos tanto no nosso produto que{' '}
+            <span className="text-gold-800 underline decoration-gold-800/30">liberamos ele para você testar por 7 dias.</span>
           </h2>
-          <p className="text-navy-200 text-sm max-w-sm leading-relaxed">
-            Plataforma SaaS completa para escritórios de advocacia. Processos, prazos, publicações DJEN, financeiro e muito mais.
+          <p className="text-navy-200 text-sm leading-relaxed mb-6">
+            Por nossa conta e risco. Sem cartão de crédito. Sem letras miúdas. Sem asteriscos. Se em 7 dias o Legere não transformar a gestão do seu escritório, você não paga nada.
           </p>
+
+          {/* Lista de recursos */}
+          <ul className="space-y-2 mb-8">
+            {[
+              'Processos, prazos e audiências em um só lugar',
+              'Publicações DJEN sincronizadas automaticamente',
+              'IA Jurídica para petições e análises',
+              'Portal do cliente com acesso seguro',
+              'Financeiro, chat interno e muito mais',
+            ].map(item => (
+              <li key={item} className="flex items-start gap-2 text-sm text-navy-200">
+                <svg className="w-4 h-4 text-gold-800 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"/>
+                </svg>
+                {item}
+              </li>
+            ))}
+          </ul>
+
+          {/* CTA principal — trial */}
+          {!inviteTenant && view !== 'CLIENT' && (
+            <button
+              onClick={onRegisterFirm}
+              className="w-full bg-gold-800 hover:bg-amber-500 text-white font-bold py-4 rounded-2xl text-sm uppercase tracking-widest transition-all shadow-2xl shadow-gold-800/40 mb-3"
+            >
+              🚀 Começar 7 dias grátis agora
+            </button>
+          )}
+
+          {/* Opção assinar imediatamente */}
+          {!inviteTenant && view !== 'CLIENT' && (
+            <button
+              onClick={onSubscribeNow ?? onRegisterFirm}
+              className="w-full bg-transparent border border-navy-600 hover:border-white text-navy-300 hover:text-white font-bold py-3 rounded-2xl text-[11px] uppercase tracking-widest transition-all"
+            >
+              Já conheço o Legere — quero assinar agora →
+            </button>
+          )}
         </div>
-        <div className="relative z-10 space-y-3">
+
+        <div className="relative z-10 space-y-3 mt-6">
           <button onClick={() => setView(view === 'CLIENT' ? 'LOGIN' : 'CLIENT')}
             className="flex items-center gap-2 text-xs font-bold text-gold-800 uppercase tracking-widest hover:text-white transition-colors">
             {view === 'CLIENT' ? '← Voltar ao Login' : 'Acesso para Clientes →'}
           </button>
-          {!inviteTenant && (
-            <button onClick={onRegisterFirm}
-              className="flex items-center gap-2 text-xs font-bold text-navy-300 uppercase tracking-widest hover:text-white transition-colors">
-              🏢 Registrar novo escritório →
-            </button>
-          )}
         </div>
       </div>
 
@@ -104,7 +141,7 @@ const StaffLogin: React.FC<StaffLoginProps> = ({ onLogin, onSignUp, onClientLogi
                 <p className="text-center text-xs text-gray-400">
                   Escritório novo?{' '}
                   <button type="button" onClick={onRegisterFirm} className="text-gold-800 font-bold hover:underline">
-                    Cadastrar escritório
+                    Teste 7 dias grátis
                   </button>
                 </p>
               </form>
@@ -186,42 +223,4 @@ const StaffLogin: React.FC<StaffLoginProps> = ({ onLogin, onSignUp, onClientLogi
           {/* LOGIN CLIENTE */}
           {view === 'CLIENT' && (
             <>
-              <h3 className="text-2xl font-serif font-bold text-navy-800 dark:text-white mb-8">Acesso do Cliente</h3>
-              <div className="space-y-4">
-                <p className="text-sm text-gray-500">Acesse o portal para acompanhar seu processo. Use seu CPF ou CNPJ e a senha de convite fornecida pelo escritório.</p>
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">CPF ou CNPJ (somente números)</label>
-                  <input type="text" value={clientDoc} onChange={e => setClientDoc(e.target.value)}
-                    placeholder="Somente números..."
-                    className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm focus:ring-2 focus:ring-gold-800 outline-none dark:text-white font-mono" />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Senha de Convite</label>
-                  <input type="password" value={clientPass} onChange={e => setClientPass(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm focus:ring-2 focus:ring-gold-800 outline-none dark:text-white" />
-                </div>
-                <button onClick={() => onClientLogin(clientDoc, clientPass)}
-                  className="w-full bg-navy-800 text-white font-bold py-4 rounded-xl shadow-xl hover:bg-gold-800 transition-all uppercase text-sm tracking-widest">
-                  Acessar Portal
-                </button>
-                <button onClick={() => setView('LOGIN')}
-                  className="w-full text-gray-400 text-sm hover:text-navy-800 transition-colors">
-                  ← Voltar ao login
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-
-        <div className="mt-8 pt-6 border-t dark:border-slate-700 text-center opacity-60">
-          <p className="text-[8px] text-gray-400 font-bold uppercase tracking-widest leading-relaxed">
-            ⚡ Powered by {APP_NAME} &nbsp;|&nbsp; Conforme LGPD (Lei 13.709/18) &nbsp;|&nbsp; Dados isolados por escritório
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export default StaffLogin;
+              <h3 className="text-2xl font-serif fo

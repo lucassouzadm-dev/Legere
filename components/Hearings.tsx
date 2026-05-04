@@ -703,18 +703,4 @@ const Hearings: React.FC<HearingsProps> = ({
 
           <div className="flex justify-end gap-3 pt-2">
             <button type="button" onClick={() => setIsFormOpen(false)}
-              className="px-6 py-2 rounded-lg text-sm font-bold text-gray-500 hover:bg-gray-100 dark:hover:bg-slate-700 transition-all">
-              Cancelar
-            </button>
-            <button type="submit"
-              className="px-8 py-2 bg-navy-800 text-white rounded-lg text-sm font-bold hover:bg-gold-800 shadow-lg transition-all">
-              {editingId ? 'Salvar Alterações' : 'Criar Audiência'}
-            </button>
-          </div>
-        </form>
-      </Modal>
-    </div>
-  );
-};
-
-export default Hearings;
+        
