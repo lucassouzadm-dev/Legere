@@ -32,6 +32,7 @@ import { tenantsDb, setCurrentTenant, getCurrentTenant, getCurrentTenantId, clea
 import { authService } from './services/authService';
 import { loadPermissions, canViewFinancials, allowedModules } from './services/permissionsService';
 import { TenantRolePermissions } from './types';
+import { verifyPassword } from './services/clientAuth';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -718,13 +719,23 @@ const App: React.FC = () => {
     setSignUpSuccess(true);
   }, []);
 
-  const handleClientLogin = useCallback((doc: string, pass: string) => {
-    const client = clients.find((c: any) =>
-      c.document.replace(/\D/g, '') === doc.replace(/\D/g, '') &&
-      c.password === pass
+  const handleClientLogin = useCallback(async (doc: string, pass: string) => {
+    const candidate = clients.find((c: any) =>
+      c.document.replace(/\D/g, '') === doc.replace(/\D/g, '')
     );
-    if (client) { setCurrentUser(client); setAuthState('CLIENT'); }
-    else alert('Documento ou senha incorretos. Verifique com o escritório.');
+    if (!candidate) {
+      alert('Documento ou senha incorretos. Verifique com o escritório.');
+      return;
+    }
+    // Verificação segura via hash SHA-256
+    if (candidate.passwordHash) {
+      const ok = await verifyPassword(pass, candidate.passwordHash);
+      if (ok) { setCurrentUser(candidate); setAuthState('CLIENT'); }
+      else alert('Documento ou senha incorretos. Verifique com o escritório.');
+    } else {
+      // Fallback legado: cliente ainda sem hash (gerado antes da migração)
+      alert('Acesso não configurado. Solicite ao escritório que gere uma nova senha de acesso para o portal.');
+    }
   }, [clients]);
 
   const handleLogout = useCallback(async () => {

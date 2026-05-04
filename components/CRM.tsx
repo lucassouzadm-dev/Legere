@@ -3,6 +3,7 @@ import React, { useState, useMemo } from 'react';
 import Modal from './Modal';
 import { ClientStatus, Client, ServiceLog, UserRole, ClientNotice, ClientDocument } from '../types';
 import { getCurrentTenantId } from '../services/tenantService';
+import { uploadAttachment, openOrDownloadAttachment } from '../services/storageService';
 
 interface CRMProps {
   clients: Client[];
@@ -86,17 +87,7 @@ const CRM: React.FC<CRMProps> = ({ clients, setClients, currentUser }) => {
   };
 
   const handleDownload = (content: string, fileName: string) => {
-    try {
-      const link = document.createElement('a');
-      link.style.display = 'none';
-      link.href = content;
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (err) {
-      console.error(err);
-    }
+    openOrDownloadAttachment(content, fileName);
   };
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -183,32 +174,29 @@ const CRM: React.FC<CRMProps> = ({ clients, setClients, currentUser }) => {
     setNewNoticeDate('');
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !selectedClient) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const fileData = event.target?.result as string;
-      const newDoc: ClientDocument = {
-        id: Date.now().toString(),
-        name: file.name,
-        date: new Date().toLocaleDateString('pt-BR'),
-        type: file.type.split('/')[1]?.toUpperCase() || 'FILE',
-        status: 'DISPONÍVEL',
-        content: fileData,
-        sentBy: 'OFFICE'
-      };
+    const url = await uploadAttachment(file, 'crm');
+    if (!url) { alert('Erro ao enviar arquivo. Tente novamente.'); return; }
 
-      const updatedClients = clients.map(c => {
-        if (c.id === selectedClient.id) {
-          return { ...c, documents: [newDoc, ...(c.documents || [])] };
-        }
-        return c;
-      });
-      setClients(updatedClients);
+    const newDoc: ClientDocument = {
+      id: Date.now().toString(),
+      name: file.name,
+      date: new Date().toLocaleDateString('pt-BR'),
+      type: file.type.split('/')[1]?.toUpperCase() || 'FILE',
+      status: 'DISPONÍVEL',
+      content: url,
+      sentBy: 'OFFICE',
     };
-    reader.readAsDataURL(file);
+
+    const updatedClients = clients.map(c =>
+      c.id === selectedClient.id
+        ? { ...c, documents: [newDoc, ...(c.documents || [])] }
+        : c
+    );
+    setClients(updatedClients);
   };
 
   const deleteDocument = (docId: string) => {

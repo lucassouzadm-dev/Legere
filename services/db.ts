@@ -74,6 +74,7 @@ function clientToDb(c: any) {
     total_contract: c.totalContract ?? 0, total_paid: c.totalPaid ?? 0,
     documents: c.documents ?? [], service_logs: c.serviceLogs ?? [],
     notices: c.notices ?? [], tenant_id: c.tenantId ?? tid(),
+    password_hash: c.passwordHash ?? null,
   };
 }
 function dbToClient(r: any) {
@@ -85,6 +86,7 @@ function dbToClient(r: any) {
     totalContract: Number(r.total_contract ?? 0), totalPaid: Number(r.total_paid ?? 0),
     documents: r.documents ?? [], serviceLogs: r.service_logs ?? [],
     notices: r.notices ?? [], tenantId: r.tenant_id,
+    passwordHash: r.password_hash ?? null,
   };
 }
 

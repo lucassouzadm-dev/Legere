@@ -4,6 +4,7 @@ import { Logo } from '../constants';
 import { translateLegalJargon } from '../services/gemini';
 import Modal from './Modal';
 import { ClientNotice, ClientDocument, Transaction, TransactionStatus } from '../types';
+import { uploadAttachment, openOrDownloadAttachment } from '../services/storageService';
 
 interface ClientPortalProps {
   client: any;
@@ -25,40 +26,38 @@ const formatCurrency = (value: number) => {
 const UploadComprovante: React.FC<{
   onReportPayment: (amount: number, data?: string, name?: string) => void;
 }> = ({ onReportPayment }) => {
-  const [amount,      setAmount]      = useState('');
-  const [file,        setFile]        = useState<{ data: string; name: string } | null>(null);
-  const [dragging,    setDragging]    = useState(false);
-  const [submitting,  setSubmitting]  = useState(false);
-  const [sent,        setSent]        = useState(false);
+  const [amount,     setAmount]     = useState('');
+  const [file,       setFile]       = useState<File | null>(null);
+  const [dragging,   setDragging]   = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [sent,       setSent]       = useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
 
-  const readFile = (f: File) => {
+  const pickFile = (f: File) => {
     if (f.size > 5 * 1024 * 1024) { alert('Arquivo muito grande. Máximo: 5 MB.'); return; }
-    const reader = new FileReader();
-    reader.onload = (e) => setFile({ data: e.target?.result as string, name: f.name });
-    reader.readAsDataURL(f);
+    setFile(f);
   };
 
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault(); setDragging(false);
     const f = e.dataTransfer.files?.[0];
-    if (f) readFile(f);
+    if (f) pickFile(f);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) { alert('Selecione o comprovante antes de enviar.'); return; }
     const val = parseFloat(amount.replace(',', '.'));
     if (isNaN(val) || val <= 0) { alert('Informe um valor válido.'); return; }
     setSubmitting(true);
-    setTimeout(() => {
-      onReportPayment(val, file.data, file.name);
-      setSent(true);
-      setSubmitting(false);
-      setAmount('');
-      setFile(null);
-      setTimeout(() => setSent(false), 4000);
-    }, 800);
+    const url = await uploadAttachment(file, 'portal');
+    if (!url) { setSubmitting(false); alert('Erro ao enviar arquivo. Tente novamente.'); return; }
+    onReportPayment(val, url, file.name);
+    setSent(true);
+    setSubmitting(false);
+    setAmount('');
+    setFile(null);
+    setTimeout(() => setSent(false), 4000);
   };
 
   return (
@@ -168,7 +167,7 @@ const UploadComprovante: React.FC<{
                 type="file"
                 accept="image/*,.pdf"
                 className="hidden"
-                onChange={e => { const f = e.target.files?.[0]; if (f) readFile(f); }}
+                onChange={e => { const f = e.target.files?.[0]; if (f) pickFile(f); }}
               />
             </div>
           )}
@@ -224,7 +223,7 @@ const ClientPortal: React.FC<ClientPortalProps & { allTransactions: Transaction[
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isDocModalOpen, setIsDocModalOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState('');
-  const [paymentFile, setPaymentFile] = useState<{ data: string, name: string } | null>(null);
+  const [paymentFile, setPaymentFile] = useState<File | null>(null);
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
 
   const WHATSAPP_NUMBER = "557591774695";
@@ -246,14 +245,7 @@ const ClientPortal: React.FC<ClientPortalProps & { allTransactions: Transaction[
   const handlePaymentFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setPaymentFile({
-        data: event.target?.result as string,
-        name: file.name
-      });
-    };
-    reader.readAsDataURL(file);
+    setPaymentFile(file);
   };
 
   const handleUpdatePayment = async (e: React.FormEvent) => {
@@ -263,62 +255,45 @@ const ClientPortal: React.FC<ClientPortalProps & { allTransactions: Transaction[
     if (!paymentFile) return alert("Por favor, anexe o comprovante de pagamento.");
 
     setIsSubmittingPayment(true);
-    setTimeout(() => {
-      onReportPayment(amount, paymentFile.data, paymentFile.name);
-      setIsPaymentModalOpen(false);
-      setPaymentAmount('');
-      setPaymentFile(null);
-      setIsSubmittingPayment(false);
-      alert("Comprovante enviado com sucesso! Aguarde a conferência pelo nosso departamento financeiro.");
-    }, 1000);
+    const url = await uploadAttachment(paymentFile, 'portal');
+    if (!url) { setIsSubmittingPayment(false); alert("Erro ao enviar comprovante. Tente novamente."); return; }
+    onReportPayment(amount, url, paymentFile.name);
+    setIsPaymentModalOpen(false);
+    setPaymentAmount('');
+    setPaymentFile(null);
+    setIsSubmittingPayment(false);
+    alert("Comprovante enviado com sucesso! Aguarde a conferência pelo nosso departamento financeiro.");
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    // Validação de segurança para localStorage (limite de 2MB por arquivo para evitar estouro)
-    if (file.size > 2 * 1024 * 1024) {
-      return alert("O arquivo é muito grande. Para garantir o desempenho, anexe arquivos de até 2MB.");
+    if (file.size > 10 * 1024 * 1024) {
+      return alert("O arquivo é muito grande. Máximo: 10 MB.");
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const fileData = event.target?.result as string;
-      const newDoc: ClientDocument = {
-        id: Date.now().toString(),
-        name: file.name,
-        date: new Date().toLocaleDateString('pt-BR'),
-        type: file.type.split('/')[1]?.toUpperCase() || 'FILE',
-        status: 'RECEBIDO',
-        content: fileData,
-        sentBy: 'CLIENT'
-      };
+    const url = await uploadAttachment(file, 'client-doc');
+    if (!url) { alert("Erro ao enviar documento. Tente novamente."); return; }
 
-      const updatedClient = {
-        ...client,
-        documents: [...(client.documents || []), newDoc]
-      };
-      onUpdateClient(updatedClient);
-      setIsDocModalOpen(false);
-      alert("Documento enviado com sucesso e já disponível na sua pasta!");
+    const newDoc: ClientDocument = {
+      id: Date.now().toString(),
+      name: file.name,
+      date: new Date().toLocaleDateString('pt-BR'),
+      type: file.type.split('/')[1]?.toUpperCase() || 'FILE',
+      status: 'RECEBIDO',
+      content: url,
+      sentBy: 'CLIENT',
     };
-    reader.onerror = () => alert("Erro ao ler o arquivo. Tente novamente.");
-    reader.readAsDataURL(file);
+
+    const updatedClient = { ...client, documents: [...(client.documents || []), newDoc] };
+    onUpdateClient(updatedClient);
+    setIsDocModalOpen(false);
+    alert("Documento enviado com sucesso e já disponível na sua pasta!");
   };
 
   const handleDownload = (doc: any) => {
     if (!doc.content) return alert("Documento sem conteúdo disponível.");
-    try {
-      const link = document.createElement('a');
-      link.href = doc.content;
-      link.download = doc.name;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (err) {
-      alert("Erro ao baixar o arquivo.");
-    }
+    openOrDownloadAttachment(doc.content, doc.name);
   };
 
   const handleDeleteDoc = (docId: string) => {
@@ -619,7 +594,7 @@ const ClientPortal: React.FC<ClientPortalProps & { allTransactions: Transaction[
       {/* Modal Upload Doc */}
       <Modal isOpen={isDocModalOpen} onClose={() => setIsDocModalOpen(false)} title="Enviar Documento">
         <div className="space-y-6">
-           <p className="text-xs text-gray-500">Envie documentos, petições ou arquivos necessários para o seu processo. (Limite de 2MB)</p>
+           <p className="text-xs text-gray-500">Envie documentos, petições ou arquivos necessários para o seu processo. (Limite de 10MB)</p>
            <label className="flex flex-col items-center justify-center p-10 border-2 border-dashed border-gray-200 dark:border-slate-700 rounded-[2rem] bg-gray-50 dark:bg-slate-900 cursor-pointer hover:border-gold-800 transition-all group">
               <svg className="w-10 h-10 text-gray-300 group-hover:text-gold-800 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
               <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest group-hover:text-navy-800 dark:group-hover:text-white">Selecionar Arquivo</span>

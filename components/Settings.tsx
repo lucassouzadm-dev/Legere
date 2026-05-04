@@ -5,7 +5,8 @@ import { BRAZIL_STATES } from '../constants';
 import IntegrationSettings from './IntegrationSettings';
 import PermissionsSettings from './PermissionsSettings';
 import { authService } from '../services/authService';
-import { usersDb } from '../services/db';
+import { usersDb, clientsDb } from '../services/db';
+import { hashPassword, generateSecurePassword } from '../services/clientAuth';
 
 interface SettingsProps {
   users: any[];
@@ -93,12 +94,18 @@ const Settings: React.FC<SettingsProps> = ({ users, setUsers, clients, currentUs
   const currentPlan: PlanType = (tenant?.plan ?? PlanType.ESSENCIAL) as PlanType;
   const features = PLAN_FEATURES[currentPlan];
 
-  const generateClientPassword = () => {
+  const generateClientPassword = async () => {
     const cleanDoc = clientDoc.replace(/\D/g, '');
     if (!cleanDoc) return alert('Insira o CPF/CNPJ do cliente.');
-    const clientExists = clients.some((c: any) => c.document.replace(/\D/g, '') === cleanDoc);
-    if (!clientExists) return alert('Cliente não localizado. Cadastre-o primeiro no CRM.');
-    const pass = `JC@${cleanDoc.substring(0, 4)}${new Date().getFullYear()}`;
+    const client = clients.find((c: any) => c.document.replace(/\D/g, '') === cleanDoc);
+    if (!client) return alert('Cliente não localizado. Cadastre-o primeiro no CRM.');
+
+    // Gera senha aleatória segura
+    const pass = generateSecurePassword(12);
+    // Gera hash SHA-256 antes de salvar
+    const hash = await hashPassword(pass);
+    // Persiste o hash no banco (nunca a senha em texto)
+    await clientsDb.upsert({ ...client, passwordHash: hash });
     setGeneratedPass(pass);
   };
 
