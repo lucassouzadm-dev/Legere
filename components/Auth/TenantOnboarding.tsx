@@ -319,4 +319,60 @@ const TenantOnboarding: React.FC<TenantOnboardingProps> = ({ onComplete, onBack,
                 <div>
                   <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">E-mail de Acesso *</label>
                   <input required type="email" value={adminEmail} onChange={e => setAdminEmail(e.target.value)}
-                 
+                    placeholder="admin@seuescritorio.com.br"
+                    className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white focus:ring-2 focus:ring-gold-800 outline-none" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">OAB Nº</label>
+                    <input value={oabNumber} onChange={e => setOabNumber(e.target.value)}
+                      placeholder="Ex: 123456"
+                      className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white focus:ring-2 focus:ring-gold-800 outline-none font-mono" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">OAB UF</label>
+                    <select value={oabState} onChange={e => setOabState(e.target.value)}
+                      className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white focus:ring-2 focus:ring-gold-800 outline-none">
+                      <option value="">Selecione</option>
+                      {BRAZIL_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Senha *</label>
+                  <input required type="password" value={adminPass} onChange={e => setAdminPass(e.target.value)}
+                    placeholder="Mínimo 8 caracteres"
+                    className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white focus:ring-2 focus:ring-gold-800 outline-none" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Confirmar Senha *</label>
+                  <input required type="password" value={adminPass2} onChange={e => setAdminPass2(e.target.value)}
+                    placeholder="Repita a senha"
+                    className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white focus:ring-2 focus:ring-gold-800 outline-none" />
+                </div>
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button type="button" onClick={() => setStep(isTrial ? 1 : 2)}
+                  className="px-6 py-3 rounded-xl text-sm font-bold text-gray-400 hover:text-gray-600 border dark:border-slate-700 transition-colors">
+                  ← Voltar
+                </button>
+                <button type="submit"
+                  className="flex-1 bg-gold-800 text-white py-3 rounded-xl text-sm font-bold uppercase tracking-widest hover:bg-navy-800 transition-all shadow-lg">
+                  {isTrial ? '🚀 Iniciar 7 dias grátis' : '🚀 Criar Escritório no Legere'}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+
+        <div className="px-8 py-4 border-t dark:border-slate-700 text-center">
+          <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">
+            ⚡ 7 dias grátis para testar — sem necessidade de cartão de crédito &nbsp;|&nbsp; Conforme LGPD (Lei 13.709/18)
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default TenantOnboarding;

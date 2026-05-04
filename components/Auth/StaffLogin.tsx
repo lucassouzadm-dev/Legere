@@ -223,4 +223,42 @@ const StaffLogin: React.FC<StaffLoginProps> = ({ onLogin, onSignUp, onClientLogi
           {/* LOGIN CLIENTE */}
           {view === 'CLIENT' && (
             <>
-              <h3 className="text-2xl font-serif fo
+              <h3 className="text-2xl font-serif font-bold text-navy-800 dark:text-white mb-8">Acesso do Cliente</h3>
+              <div className="space-y-4">
+                <p className="text-sm text-gray-500">Acesse o portal para acompanhar seu processo. Use seu CPF ou CNPJ e a senha de convite fornecida pelo escritório.</p>
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">CPF ou CNPJ (somente números)</label>
+                  <input type="text" value={clientDoc} onChange={e => setClientDoc(e.target.value)}
+                    placeholder="Somente números..."
+                    className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm focus:ring-2 focus:ring-gold-800 outline-none dark:text-white font-mono" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Senha de Convite</label>
+                  <input type="password" value={clientPass} onChange={e => setClientPass(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm focus:ring-2 focus:ring-gold-800 outline-none dark:text-white" />
+                </div>
+                <button onClick={() => onClientLogin(clientDoc, clientPass)}
+                  className="w-full bg-navy-800 text-white font-bold py-4 rounded-xl shadow-xl hover:bg-gold-800 transition-all uppercase text-sm tracking-widest">
+                  Acessar Portal
+                </button>
+                <button onClick={() => setView('LOGIN')}
+                  className="w-full text-gray-400 text-sm hover:text-navy-800 transition-colors">
+                  ← Voltar ao login
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="mt-8 pt-6 border-t dark:border-slate-700 text-center opacity-60">
+          <p className="text-[8px] text-gray-400 font-bold uppercase tracking-widest leading-relaxed">
+            ⚡ Powered by {APP_NAME} &nbsp;|&nbsp; Conforme LGPD (Lei 13.709/18) &nbsp;|&nbsp; Dados isolados por escritório
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default StaffLogin;

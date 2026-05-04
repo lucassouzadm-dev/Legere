@@ -197,4 +197,17 @@ const Layout: React.FC<LayoutProps> = ({
                 <p className="text-sm font-bold dark:text-white leading-none">{userName}</p>
                 <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-widest mt-1">{userRole}</p>
               </div>
-              <div className="w-10 h-10 rounded-xl border-2 border-gold-800/30 b
+              <div className="w-10 h-10 rounded-xl border-2 border-gold-800/30 bg-navy-800 flex items-center justify-center text-white font-bold shrink-0 shadow-lg">{userName.charAt(0)}</div>
+            </div>
+          </div>
+        </header>
+
+        <div className="flex-1 overflow-auto p-4 md:p-8 custom-scrollbar bg-gray-50 dark:bg-slate-900">
+          {children}
+        </div>
+      </main>
+    </div>
+  );
+};
+
+export default Layout;

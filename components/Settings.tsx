@@ -565,4 +565,56 @@ const Settings: React.FC<SettingsProps> = ({ users, setUsers, clients, currentUs
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
               <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Nome Completo</label>
-              <input name="name" defaultValue={edi
+              <input name="name" defaultValue={editingUser?.name} required className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white" />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">E-mail</label>
+              <input name="email" type="email" defaultValue={editingUser?.email} required className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white" />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Senha</label>
+              <input name="password" type="password" placeholder={editingUser?.id ? 'Em branco = manter atual' : 'Mínimo 6 caracteres'} required={!editingUser?.id}
+                className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white focus:ring-2 focus:ring-gold-800 outline-none" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Função</label>
+              <select name="role" defaultValue={editingUser?.role || UserRole.LAWYER}
+                className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white">
+                <option value={UserRole.LAWYER}>Advogado(a)</option>
+                <option value={UserRole.ADMIN}>Administrador</option>
+                <option value={UserRole.INTERN}>Estagiário(a)</option>
+                <option value={UserRole.RECEPTION}>Secretária</option>
+                <option value={UserRole.FINANCE}>Financeiro</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Meta Mensal (R$)</label>
+              <input name="monthlyGoal" type="number" step="0.01" defaultValue={editingUser?.monthlyGoal}
+                className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">OAB Nº</label>
+              <input name="oabNumber" defaultValue={editingUser?.oabNumber || ''}
+                placeholder="Ex: 123456"
+                className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white font-mono focus:ring-2 focus:ring-gold-800 outline-none" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">OAB UF</label>
+              <select name="oabState" defaultValue={editingUser?.oabState || ''}
+                className="w-full bg-gray-50 dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-3 text-sm dark:text-white focus:ring-2 focus:ring-gold-800 outline-none">
+                <option value="">— Selecione —</option>
+                {BRAZIL_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="flex justify-end gap-3 mt-6">
+            <button type="button" onClick={() => setIsModalOpen(false)} className="px-6 py-2 rounded-xl text-sm font-bold text-gray-400">Cancelar</button>
+            <button type="submit" className="px-8 py-2 bg-navy-800 text-white rounded-xl text-sm font-bold hover:bg-gold-800 transition-all uppercase tracking-widest text-[10px]">Salvar</button>
+          </div>
+        </form>
+      </Modal>
+    </div>
+  );
+};
+
+export default Settings;
