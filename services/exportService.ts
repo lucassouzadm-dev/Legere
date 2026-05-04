@@ -357,3 +357,299 @@ export async function exportFinanceExcel(transactions: any[], tenantName: string
     alert('Erro ao gerar Excel de financeiro. Tente novamente.');
   }
 }
+
+// ─── Mapa de status audiências ────────────────────────────────────────────────
+const HEARING_STATUS_MAP: Record<string, string> = {
+  SCHEDULED: 'Agendada',
+  COMPLETED: 'Realizada',
+  CANCELLED: 'Cancelada',
+  POSTPONED: 'Adiada',
+};
+const HEARING_MODAL_MAP: Record<string, string> = {
+  PRESENCIAL:       'Presencial',
+  VIDEOCONFERENCIA: 'Videoconferência',
+  HIBRIDA:          'Híbrida',
+};
+
+/**
+ * Exporta lista de audiências para PDF com destaque por proximidade
+ */
+export async function exportHearingsPDF(hearings: any[], users: any[], tenantName: string): Promise<void> {
+  try {
+    const pdfMake = await getPdfMake();
+    const now     = new Date();
+    const dateStr = now.toLocaleDateString('pt-BR');
+    const today   = new Date(); today.setHours(0, 0, 0, 0);
+
+    const sorted = [...hearings].sort((a, b) =>
+      new Date(`${a.date}T${a.time || '00:00'}`).getTime() -
+      new Date(`${b.date}T${b.time || '00:00'}`).getTime()
+    );
+
+    function rowFill(diffDays: number, status: string): string {
+      if (status === 'CANCELLED') return '#F3F4F6';
+      if (status === 'COMPLETED') return '#D1FAE5';
+      if (diffDays < 0)  return '#FEE2E2';
+      if (diffDays <= 1) return '#FECACA';
+      if (diffDays <= 7) return '#FEF3C7';
+      return '#FFFFFF';
+    }
+
+    const tableBody: any[][] = [
+      ['Data / Hora', 'Processo', 'Partes', 'Modalidade', 'Local / Link', 'Responsável', 'Status'].map(h => ({
+        text: h, style: 'tableHeader',
+      })),
+      ...sorted.map((h, i) => {
+        const hDate   = new Date(`${h.date}T${h.time || '00:00'}:00`);
+        const diffMs  = hDate.getTime() - today.getTime();
+        const diffD   = Math.ceil(diffMs / 86_400_000);
+        const fill    = rowFill(diffD, h.status);
+        const respName = users.find((u: any) => u.id === h.responsibleId)?.name ?? h.responsibleName ?? '—';
+        const localLink = h.modality === 'VIDEOCONFERENCIA' ? (h.link || '—') : (h.location || '—');
+        const dateFmt = h.date
+          ? new Date(h.date + 'T12:00:00').toLocaleDateString('pt-BR') + (h.time ? ` ${h.time}` : '')
+          : '—';
+        const cell = (v: any) => ({ text: String(v ?? '—'), fontSize: 8, fillColor: fill });
+        return [
+          cell(dateFmt),
+          cell(h.processNumber || '—'),
+          cell(h.parties || h.clientName || '—'),
+          cell(HEARING_MODAL_MAP[h.modality] ?? h.modality ?? '—'),
+          cell(localLink),
+          cell(respName),
+          { text: HEARING_STATUS_MAP[h.status] ?? h.status ?? '—', fontSize: 8, bold: h.status === 'SCHEDULED', fillColor: fill },
+        ];
+      }),
+    ];
+
+    const agendadas = hearings.filter(h => h.status === 'SCHEDULED').length;
+
+    const docDef: any = {
+      pageOrientation: 'landscape',
+      pageMargins: [30, 50, 30, 40],
+      styles: PDF_STYLES,
+      footer: (cur: number, total: number) =>
+        pdfFooter(cur, total, `Total: ${hearings.length} audiências | Agendadas: ${agendadas}`),
+      content: [
+        { text: tenantName, style: 'title' },
+        { text: `Relatório de Audiências  |  Gerado em ${dateStr}`, style: 'subtitle' },
+        {
+          columns: [
+            { text: '■ Realizada', fontSize: 8, color: '#16A34A', margin: [0, 0, 10, 10] },
+            { text: '■ Vencida',   fontSize: 8, color: '#DC2626', margin: [0, 0, 10, 10] },
+            { text: '■ Amanhã',    fontSize: 8, color: '#EF4444', margin: [0, 0, 10, 10] },
+            { text: '■ Esta semana', fontSize: 8, color: '#D97706', margin: [0, 0, 10, 10] },
+            { text: '■ Cancelada', fontSize: 8, color: '#9CA3AF', margin: [0, 0, 10, 10] },
+          ],
+        },
+        {
+          table: {
+            headerRows: 1,
+            widths: [60, 80, 80, 55, 80, 70, 40],
+            body: tableBody,
+          },
+          layout: { hLineWidth: () => 0.5, vLineWidth: () => 0, hLineColor: () => '#E5E7EB' },
+        },
+      ],
+    };
+
+    const slug  = tenantName.replace(/\s+/g, '-').toLowerCase();
+    const stamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    pdfMake.createPdf(docDef).download(`audiencias-${slug}-${stamp}.pdf`);
+  } catch (error) {
+    console.error('Erro ao exportar PDF de audiências:', error);
+    alert('Erro ao gerar PDF de audiências. Tente novamente.');
+  }
+}
+
+// ─── Mapa de status clientes ──────────────────────────────────────────────────
+const CLIENT_STATUS_MAP: Record<string, string> = {
+  LEAD:            'Lead',
+  PROSPECT:        'Prospecto',
+  CONTRACT_SENT:   'Contrato Enviado',
+  ACTIVE:          'Ativo',
+  INACTIVE:        'Inativo',
+  EX_CLIENT:       'Ex-Cliente',
+};
+
+/**
+ * Exporta base de clientes para PDF
+ */
+export async function exportClientsPDF(clients: any[], tenantName: string): Promise<void> {
+  try {
+    const pdfMake = await getPdfMake();
+    const now     = new Date();
+    const dateStr = now.toLocaleDateString('pt-BR');
+
+    const STATUS_FILL: Record<string, string> = {
+      ACTIVE:         '#D1FAE5',
+      LEAD:           '#DBEAFE',
+      PROSPECT:       '#EDE9FE',
+      CONTRACT_SENT:  '#FEF3C7',
+      INACTIVE:       '#F3F4F6',
+      EX_CLIENT:      '#FEE2E2',
+    };
+
+    const tableBody: any[][] = [
+      ['Nome', 'CPF / CNPJ', 'Status', 'Telefone', 'E-mail', 'Processos', 'Total Pago'].map(h => ({
+        text: h, style: 'tableHeader',
+      })),
+      ...clients.map(c => {
+        const fill = STATUS_FILL[c.status] ?? '#FFFFFF';
+        const cell = (v: any) => ({ text: String(v ?? '—'), fontSize: 8, fillColor: fill });
+        const totalPaid = c.totalPaid
+          ? `R$ ${Number(c.totalPaid).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+          : 'R$ 0,00';
+        return [
+          cell(c.name),
+          cell(c.document || '—'),
+          { text: CLIENT_STATUS_MAP[c.status] ?? c.status ?? '—', fontSize: 8, bold: true, fillColor: fill },
+          cell(c.phone || '—'),
+          cell(c.email || '—'),
+          cell(c.caseCount ?? '—'),
+          cell(totalPaid),
+        ];
+      }),
+    ];
+
+    const ativos = clients.filter(c => c.status === 'ACTIVE').length;
+
+    const docDef: any = {
+      pageOrientation: 'landscape',
+      pageMargins: [30, 50, 30, 40],
+      styles: PDF_STYLES,
+      footer: (cur: number, total: number) =>
+        pdfFooter(cur, total, `Total de clientes: ${clients.length} | Ativos: ${ativos}`),
+      content: [
+        { text: tenantName, style: 'title' },
+        { text: `Relatório de Clientes  |  Gerado em ${dateStr}`, style: 'subtitle' },
+        {
+          table: {
+            headerRows: 1,
+            widths: [90, 60, 45, 55, 90, 30, 50],
+            body: tableBody,
+          },
+          layout: { hLineWidth: () => 0.5, vLineWidth: () => 0, hLineColor: () => '#E5E7EB' },
+        },
+      ],
+    };
+
+    const slug  = tenantName.replace(/\s+/g, '-').toLowerCase();
+    const stamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    pdfMake.createPdf(docDef).download(`clientes-${slug}-${stamp}.pdf`);
+  } catch (error) {
+    console.error('Erro ao exportar PDF de clientes:', error);
+    alert('Erro ao gerar PDF de clientes. Tente novamente.');
+  }
+}
+
+/**
+ * Exporta base de clientes para Excel com formatação profissional
+ */
+export async function exportClientsExcel(clients: any[], tenantName: string): Promise<void> {
+  try {
+    const ExcelJS = await import('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = tenantName;
+    workbook.created = new Date();
+
+    const now     = new Date();
+    const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const NAVY    = { argb: 'FF1E3A8A' };
+    const WHITE   = { argb: 'FFFFFFFF' };
+    const BRL     = '"R$ "#,##0.00';
+
+    const ws = workbook.addWorksheet('Clientes');
+    ws.columns = [
+      { header: 'Nome',           key: 'name',        width: 32 },
+      { header: 'CPF / CNPJ',     key: 'document',    width: 20 },
+      { header: 'Status',         key: 'status',      width: 18 },
+      { header: 'Telefone',       key: 'phone',       width: 18 },
+      { header: 'E-mail',         key: 'email',       width: 30 },
+      { header: 'Endereço',       key: 'address',     width: 32 },
+      { header: 'Tipo',           key: 'type',        width: 14 },
+      { header: 'Processos',      key: 'caseCount',   width: 12 },
+      { header: 'Total Pago',     key: 'totalPaid',   width: 18 },
+      { header: 'Último Contato', key: 'lastContact', width: 18 },
+      { header: 'Observações',    key: 'notes',       width: 36 },
+    ];
+
+    // Estilo do cabeçalho
+    const headerRow = ws.getRow(1);
+    headerRow.eachCell(cell => {
+      cell.fill   = { type: 'pattern', pattern: 'solid', fgColor: NAVY };
+      cell.font   = { bold: true, color: WHITE, size: 10 };
+      cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      cell.border = { bottom: { style: 'medium', color: { argb: 'FFCB9D1B' } } };
+    });
+    headerRow.height = 22;
+
+    const STATUS_FILL_ARG: Record<string, string> = {
+      ACTIVE:        'FFD1FAE5',
+      LEAD:          'FFDBEAFE',
+      PROSPECT:      'FFEDE9FE',
+      CONTRACT_SENT: 'FFFEF3C7',
+      INACTIVE:      'FFF3F4F6',
+      EX_CLIENT:     'FFFEE2E2',
+    };
+
+    clients.forEach((c, idx) => {
+      const row = ws.addRow({
+        name:        c.name ?? '',
+        document:    c.document ?? '',
+        status:      CLIENT_STATUS_MAP[c.status] ?? c.status ?? '',
+        phone:       c.phone ?? '',
+        email:       c.email ?? '',
+        address:     c.address ?? '',
+        type:        c.type === 'PJ' ? 'Pessoa Jurídica' : 'Pessoa Física',
+        caseCount:   c.caseCount ?? 0,
+        totalPaid:   Number(c.totalPaid) || 0,
+        lastContact: c.lastContact
+          ? new Date(c.lastContact + 'T12:00:00').toLocaleDateString('pt-BR')
+          : '',
+        notes:       c.notes ?? '',
+      });
+
+      row.getCell('totalPaid').numFmt = BRL;
+      row.getCell('caseCount').alignment = { horizontal: 'center' };
+
+      const bgColor = STATUS_FILL_ARG[c.status] ?? (idx % 2 === 0 ? 'FFFFFFFF' : 'FFF9FAFB');
+      row.eachCell(cell => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
+        cell.alignment = { ...(cell.alignment || {}), vertical: 'middle', wrapText: false };
+      });
+    });
+
+    // Aba de resumo
+    const wsSummary = workbook.addWorksheet('Resumo');
+    wsSummary.columns = [
+      { header: 'Status',    key: 'status',  width: 22 },
+      { header: 'Quantidade', key: 'count',  width: 14 },
+    ];
+    const sumHeader = wsSummary.getRow(1);
+    sumHeader.eachCell(cell => {
+      cell.fill   = { type: 'pattern', pattern: 'solid', fgColor: NAVY };
+      cell.font   = { bold: true, color: WHITE, size: 10 };
+      cell.alignment = { horizontal: 'center' };
+    });
+
+    const countByStatus: Record<string, number> = {};
+    clients.forEach(c => { countByStatus[c.status] = (countByStatus[c.status] || 0) + 1; });
+    Object.entries(countByStatus).forEach(([status, count]) => {
+      wsSummary.addRow({ status: CLIENT_STATUS_MAP[status] ?? status, count });
+    });
+    wsSummary.addRow({ status: 'TOTAL', count: clients.length }).font = { bold: true };
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob   = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url    = URL.createObjectURL(blob);
+    const link   = document.createElement('a');
+    link.href     = url;
+    link.download = `clientes-${tenantName.replace(/\s+/g, '-').toLowerCase()}-${dateStr}.xlsx`;
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error('Erro ao exportar Excel de clientes:', error);
+    alert('Erro ao gerar Excel de clientes. Tente novamente.');
+  }
+}
