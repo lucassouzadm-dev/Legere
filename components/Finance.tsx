@@ -226,7 +226,7 @@ const Finance: React.FC<FinanceProps> = ({ transactions, setTransactions, users,
           </button>
 
           <button 
-            onClick={() => { setEditingTx(null); setAttachment(null); setIsModalOpen(true); }} 
+            onClick={() => { setEditingTx(null); setAttachmentFile(null); setIsModalOpen(true); }}
             className="flex-1 md:flex-none bg-navy-800 text-white px-6 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest shadow-lg hover:bg-gold-800 transition-all flex items-center justify-center gap-2"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"/></svg>
@@ -432,7 +432,7 @@ const Finance: React.FC<FinanceProps> = ({ transactions, setTransactions, users,
       )}
 
       {/* Modal de Lançamento Completo com Upload */}
-      <Modal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditingTx(null); setAttachment(null); setIsFuture(false); }} title={editingTx ? "Editar Registro" : "Novo Lançamento Estruturado"}>
+      <Modal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditingTx(null); setAttachmentFile(null); setIsFuture(false); }} title={editingTx ? "Editar Registro" : "Novo Lançamento Estruturado"}>
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="flex gap-2">
              <button type="button" onClick={() => setTxType('IN')} className={`flex-1 py-3 rounded-xl font-bold uppercase text-[10px] border transition-all ${txType === 'IN' ? 'bg-green-600 border-green-600 text-white shadow-lg' : 'bg-gray-50 border-gray-200 text-gray-400'}`}>Receita</button>
